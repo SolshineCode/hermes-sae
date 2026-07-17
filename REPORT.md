@@ -258,7 +258,17 @@ Observation: later layers show markedly higher-magnitude activations (layer 63 p
 
 The underlying data (`allf_a` per layer) carries the **full 81,920-wide `max_profile`** plus a sparse `token × feature` list above threshold — so the dashboard can surface *every* dictionary feature, not just a Top-K.
 
-**Status:** dashboard built + unit-tested on synthetic residuals (81,920-length profile, 197,155 sparse entries, ranking correct). The **real-data demo row is PENDING** — the live row 0 used the old schema (no `allf`). The populate run `3e5a9c36` (gpu=both, 2026-07-17 01:40) will produce the first `allf`-bearing row.
+**Status:** ✅ **DELIVERED (2026-07-17 01:40, booking `3e5a9c36`, clean exit + slot released).** The patched instrument produced a real all-features row: `ok=True, same_inference=True, all_features_viewable=True, d_sae=81920`. Full 81,920-feature profile captured for all 5 layers. Measured depth gradient (row 0, UBI prompt):
+
+| Layer | nonzero features | sparse fired (>thr) | peak activation |
+|---|---|---|---|
+| L0 | 9,919 | 2,536 | 3.17 |
+| L16 | 48,901 | 40,127 | 25.79 |
+| L32 | 54,393 | 158,107 | 31.56 |
+| L48 | 57,708 | 386,745 | 86.03 |
+| L63 | 57,885 | 856,184 | 293.94 |
+
+Clear layer-depth signal: early layers are sparse/low-magnitude (L0: ~10k features fire, peak 3.17); deep layers dense/high-magnitude (L63: ~58k features, peak 293.94). Dashboard data-contract validated (PASS: `allf_a[L].max_profile[81920]` + `sparse` + `labeler_a` present for all 5 layers). Full artifact: `runs/sae_course_allfeat_20260717_014028/sae_course.jsonl` (228 MB); a 3.2 MB demo (`sample_allfeat_row0.jsonl`, sparse capped top-2000/layer, floats 3dp) is committed to the repo for portability.
 
 ---
 
