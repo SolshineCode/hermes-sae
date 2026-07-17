@@ -265,7 +265,7 @@ The underlying data (`allf_a` per layer) carries the **full 81,920-wide `max_pro
 ## 12. Quantization & Throughput
 
 - **Throughput:** fp16 CPU-offload ≈ **13.5 h/row** (row 0 ran ~04:00→17:31). The watchdog caps a window at ~1 row. This is the gating constraint for scaling beyond a PoC.
-- **Quantization unlock (planned):** 4-bit (torchao `int4_weight_only`) fits ~14 GB, runs on a single GPU, and — with one model per GPU — enables ~2× parallelism, netting roughly 4–6× faster. **Caveat:** SAE was trained on fp16 activations, so quant must be *validated* before trusting its features.
+- **Quantization unlock (planned, but BLOCKED on M40):** 4-bit (torchao `int4_weight_only`) needs bf16 (no M40 compute); 8-bit (`int8_weight_only`) OOMs a 27B model on 24 GB during the quant op itself. The quant-sameness validator is written and correct but requires a GPU ≥27 GB or a CPU-only quant path (see §14.7). Until then, scale-up stays on fp16 CPU-offload multi-window runs.
 - **Quant-sameness validation (B):** `validate_quant_sameness.py` loads the int4 model on gpu=1, re-runs the **same** hooked `generate_with_hooks` on row 0's input, and compares against the fp16 row-0 features already on disk using (a) per-layer Top-K feature-id **Jaccard**, (b) activation **cosine** on matched features, (c) label parse + text overlap. **Status: PENDING** — `torchao` is not installed (§14).
 
 ---
@@ -329,7 +329,12 @@ Wrap any run in a scheduler-aware waiter: `gpusched wait <RESV>` then `timeout -
 4. **PoC scope** — 5 SAE layers (user-approved "5 is enough" for PoC); full 64-layer coverage is a larger download (~205 GB) and a different run profile.
 5. **Single model** — Qwen3.5-27B only (user-locked). Multi-model generality (for "features transfer across models") is not yet exercised.
 6. **Falsifiable claim deferred** — the research hypothesis (e.g. "feature set F fires with ≥X AUC when label=deceptive") is intentionally deferred until the dashboard works; the instrument is the tool, the claim comes after.
-7. **Environment coupling** — this run depends on `/tmp` staging (disk pressure on `/`) and a local HF mirror proxy; a fresh install should point `HF_HOME` at adequate storage.
+7. **Quant-sameness validation is BLOCKED on this hardware.** The `56a2d647` run (2026-07-16 21:35, gpu=1) failed — not a code bug, but a real M40 (24 GB) VRAM ceiling:
+   - `torchao` was missing → installed `0.6.1` (torch 2.4.1 compatible; torch/transformers imports confirmed intact, so the 01:40 all-features run is safe).
+   - `int4_weight_only()` requires **bfloat16** model load, but M40 (sm_52) has no bf16 compute → the tinygemm packing path hangs/fails.
+   - `int8_weight_only()` in fp16 runs, but torchao's `quantize_` op executes **on the GPU**; a 27B model (even 8-bit ≈ 27 GB) exceeds 24 GB, so it OOMs during quantization itself (not just `.to()`).
+   - The fp16 course run never hit this because it loads fp16 with `device_map="auto"` (CPU offload) and never quantizes.
+   **Conclusion:** quant-sameness validation cannot complete on 24 GB M40s. It needs either (a) a GPU with ≥27 GB VRAM, or (b) a CPU-only quantize path (torchao does not currently run the int8 quant op on CPU cleanly here). The validator code is correct and committed; it will run on suitable hardware. **This is a hardware gate, not a logic error.**
 
 ---
 

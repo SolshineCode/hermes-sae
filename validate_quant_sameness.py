@@ -62,15 +62,20 @@ def main():
 
     # ---- load quant model + tokenizer + SAEs ----
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    tok = AutoTokenizer.from_pretrained(args.model, cache_dir=args.hf_cache)
+    tok = AutoTokenizer.from_pretrained(args.model, cache_dir=args.hf_cache, local_files_only=True)
     mdl_kwargs = dict(torch_dtype=DTYPE, device_map={"":args.device})
-    if args.quant == "int4":
-        from torchao.quantization import quantize_, int4_weight_only
-        mdl_kwargs.pop("device_map")
-    model = AutoModelForCausalLM.from_pretrained(args.model, cache_dir=args.hf_cache, **mdl_kwargs)
+    if args.quant in ("int4", "int8"):
+        from torchao.quantization import quantize_, int4_weight_only, int8_weight_only
+        # M40 (24GB) cannot hold a 27B quant on one GPU; use device_map="auto"
+        # (CPU offload) exactly like the fp16 course run to avoid OOM.
+        mdl_kwargs["device_map"] = "auto"
+    model = AutoModelForCausalLM.from_pretrained(args.model, cache_dir=args.hf_cache, local_files_only=True, **mdl_kwargs)
     if args.quant == "int4":
         quantize_(model, int4_weight_only())
-        model = model.to(args.device)
+    elif args.quant == "int8":
+        quantize_(model, int8_weight_only())
+    # NOTE: do NOT .to(device) — device_map=auto already placed layers; forcing
+    # all onto one GPU OOMs on 24GB M40.
 
     # import the SAME hooked generate used by the course (faithful path)
     sys.path.insert(0, "/tmp/course_run/experiments/v8_nla_local/labeled_outputs")
