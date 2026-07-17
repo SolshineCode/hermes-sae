@@ -270,13 +270,49 @@ The underlying data (`allf_a` per layer) carries the **full 81,920-wide `max_pro
 
 Clear layer-depth signal: early layers are sparse/low-magnitude (L0: ~10k features fire, peak 3.17); deep layers dense/high-magnitude (L63: ~58k features, peak 293.94). Dashboard data-contract validated (PASS: `allf_a[L].max_profile[81920]` + `sparse` + `labeler_a` present for all 5 layers). Full artifact: `runs/sae_course_allfeat_20260717_014028/sae_course.jsonl` (228 MB); a 3.2 MB demo (`sample_allfeat_row0.jsonl`, sparse capped top-2000/layer, floats 3dp) is committed to the repo for portability.
 
+### 11.1 Dashboard UI — what users see (live screenshots)
+
+The viewer has **no server**: open `dashboard.html` (file-upload) or `dashboard_demo.html` (demo data baked in), pick **Dataset row → Layer → Pass** (A labeler / B audit / Auditor), and the panels render. The header status line reads `same_inference=true · all_viewable=true · d_sae=81920 · model=Qwen/Qwen3.5-27B`; the labels panel ends with `agreement A/B=1 · same inference as SAE readout ✓`.
+
+Below are real captures of the **same row 0 (UBI prompt)** at two depths — the layer-depth signal made visible:
+
+| Layer 0 (early, sparse) | Layer 63 (deep, dense) |
+|---|---|
+| ![Layer 0 dashboard](sae_dashboard_layer0.png) | ![Layer 63 dashboard](sae_dashboard_layer63.png) |
+
+What changed between the two:
+- **Top feature**: `71349` @ **3.17** (L0) → `80518` @ **293.94** (L63) — ~93× stronger.
+- **Features fired** (of 81,920): **416** (L0) → **50,670** (L63).
+- **Heatmap caption** (L63): *"50670 / 81920 features fired (thr=1). heatmap shows top 50 features × 2199 tokens."*
+- **Histogram**: L0 is a thin spike near 0; L63 spreads across a 0→294 axis (long-tail, many low + few extreme).
+
+**How this fits the Hermes Agent workflow (two surfaces):**
+1. **Live (run in flight)** — the `tee` log + Hermes completion notification *is* the UI: `row0 ok=True | all_features_viewable=True | d_sae=81920 | sparse=2536`. That one line is the health check (same-inference held, features captured, VRAM safe).
+2. **Look-back / debugging** — the durable `.jsonl` record + this dashboard. Headless audit (no browser):
+   ```python
+   import json
+   recs=[json.loads(l) for l in open(F)]
+   bad=[r for r in recs if not r['meta']['ok']]           # failed rows
+   unfaithful=[r for r in recs if not r['meta']['same_inference']]  # replay/faithfulness break
+   ```
+   Visual review = open `dashboard.html`, load the run file, read histogram/heatmap/labels.
+
+**Debugging superpower:** every record's `same_inference=True` proves the SAE readout and the label came from *one* forward pass — so auditing a row means auditing one faithful event, not two inferences stitched together. That is what makes any future label↔feature correlation (the deferred falsifiable claim) trustworthy.
+
+**Files to open now:**
+- `/tmp/hermes-sae/dashboard_demo.html` — embedded demo (opens immediately).
+- `/tmp/hermes-sae/dashboard.html` — portable viewer (upload the 228 MB run file).
+- This report's companion PNGs: `sae_dashboard_layer0.png`, `sae_dashboard_layer63.png` (in `~/Documents`).
+
+**Known gap:** the dashboard is file-in / static-out. A live tail (auto-refresh as a run appends rows) would need a small Flask wrapper around the same jsonl — optional, not yet built.
+
 ---
 
 ## 12. Quantization & Throughput
 
 - **Throughput:** fp16 CPU-offload ≈ **13.5 h/row** (row 0 ran ~04:00→17:31). The watchdog caps a window at ~1 row. This is the gating constraint for scaling beyond a PoC.
 - **Quantization unlock (planned, but BLOCKED on M40):** 4-bit (torchao `int4_weight_only`) needs bf16 (no M40 compute); 8-bit (`int8_weight_only`) OOMs a 27B model on 24 GB during the quant op itself. The quant-sameness validator is written and correct but requires a GPU ≥27 GB or a CPU-only quant path (see §14.7). Until then, scale-up stays on fp16 CPU-offload multi-window runs.
-- **Quant-sameness validation (B):** `validate_quant_sameness.py` loads the int4 model on gpu=1, re-runs the **same** hooked `generate_with_hooks` on row 0's input, and compares against the fp16 row-0 features already on disk using (a) per-layer Top-K feature-id **Jaccard**, (b) activation **cosine** on matched features, (c) label parse + text overlap. **Status: PENDING** — `torchao` is not installed (§14).
+- **Quant-sameness validation (B):** `validate_quant_sameness.py` loads the int4 model on gpu=1, re-runs the **same** hooked `generate_with_hooks` on row 0's input, and compares against the fp16 row-0 features already on disk using (a) per-layer Top-K feature-id **Jaccard**, (b) activation **cosine** on matched features, (c) label parse + text overlap. **Status: BLOCKED on M40 VRAM** — `torchao 0.6.1` is now installed (torch 2.4.1 compatible; torch/transformers imports verified intact), but int4 needs bf16 (no M40 compute) and int8 OOMs a 27B model on 24 GB during the quant op itself (see §14.7). Validator code is correct and committed; needs GPU ≥27 GB or a CPU-only quant path.
 
 ---
 
