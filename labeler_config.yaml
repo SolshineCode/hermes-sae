@@ -1,0 +1,90 @@
+# labeler_config.yaml — robust, replicable NLA labeling system config
+#
+# Design goals (per 2026-07-10 directive: "robust replicable system to label datasets with local Qwen on these GPUs"):
+#  - Model is a CONFIG parameter, not hardcoded. Swapping to a faster/non-reasoning Qwen (or another local
+#    model) is a one-line `model:` change + a model-profile entry. No engine code changes.
+#  - Extraction rules live in the model PROFILE (how to pull the label from the response), because different
+#    ollama builds emit output differently (see profiles below).
+#  - Prompt SET is selectable (v1 = Dr. Chen/Otsuka canonical; v2 = alternative concise-JSON). Both coexist.
+#  - Few-shot example is embedded per labeler to prevent schema-template echo (proven necessary for qwen3.5:27b).
+
+defaults:
+  ollama_url: "http://localhost:11434/api/chat"
+  tensor_split: [40, 8]         # BOTH M40s but GPU0 does the bulk of decode (44 vs 8 GB split) so GPU1
+                                # stays cool per user request (GPU1 hit 87-88C in warm room; GPU0 cooler).
+                                # NOTE: also try single-GPU [24,0] if a 27B q4 fits one card — see audit rec G.
+  num_predict: 1400             # qwen3.5:27b needs ~1400 tok to finish a label (over-reasons)
+  temperature: 0.0
+  keep_alive: "90m"
+  retry: 3
+
+# ---- model profiles: how to drive + extract from each build ----
+model_profiles:
+  qwen3.5:27b:
+    extract_from: thinking        # on homelab build, content is EMPTY; label lives in thinking
+    extract_method: fenced_json_or_last_balanced
+    few_shot: true                # REQUIRED to stop schema-echo on this build
+    num_predict: 5000             # raised repeatedly: qwen3.5:27b over-reasons (~1400+ tok preamble) before
+                                 # the JSON. 1400->truncated; 2000->still truncated on hard prompts + chat()
+                                 # timeout=300 ERR'd slow passes; 3000-> labeler_b robust, labeler_a truncates
+                                 # on ~4 hardest rows. 5000 covers the tail. Paired with chat() timeout=900.
+    stop: []                      # DO NOT set stop seqs: backtick/`}` stops cut Qwen off BEFORE it emits JSON
+                                 # (confirmed: stop=['}\n','```'] truncated mid-reasoning on literal backtick).
+    approx_tok_per_label: 5000
+    approx_seconds_per_label: 700
+    notes: >
+      Reasoning build. Always emits "Thinking Process:" preamble into message.thinking;
+      message.content is empty regardless of think flag. Few-shot example eliminates schema-echo.
+      Slow (~200s/label on 2xM40). For production-scale labeling prefer a smaller/non-reasoning Qwen
+      (e.g. qwen3.5:8b or a non-thinking variant) — add its profile here, no code change.
+
+# ---- prompt sets ----
+prompt_sets:
+  v1_canonical:                  # Dr. Chen / Dr. Otsuka (NOT modified by this system)
+    labeler: labeler_persona_v1_dr_chen.md
+    auditor: auditor_persona_v1_dr_otsuka.md
+    instruction: INSTRUCTION_anthropic_verbatim.md
+    schema: free_text_analysis    # <analysis> block
+  v2_alternative:                # constructed 2026-07-10 (this session)
+    labeler_a: labeler_v2a_concise_json.md
+    labeler_b: labeler_v2b_concise_json.md
+    auditor: auditor_v2a_structured.md
+    instruction: INSTRUCTION_nla_json_schema.md
+    schema: json
+  v3_agent_trace:                # agent-trace follow-up (process/motivation labeling)
+    labeler_a: labeler_v3a_agent_process.md
+    labeler_b: labeler_v3b_agent_compliance.md
+    auditor: auditor_v2a_structured.md   # reuses structured validator
+    instruction: INSTRUCTION_agent_trace_schema.md
+    schema: json
+
+# ---- active run config ----
+run:
+  model: qwen3.5:27b
+  prompt_set: v2_alternative
+  passes: [labeler_a, labeler_b, auditor]   # auditor validates over labeler_a
+  datasets:
+    - name: pku_deceptionbench_pilot
+      path: pilot_runs/pku_deceptionbench_pilot15_diverse.jsonl
+      text_field: prompt
+      limit: 15
+  audit:
+    agreement_keys: [nla_relevant, domain, has_factual_claim, role_playing]
+    think_leak_check: true
+
+# ---- agent-trace follow-up run (DISABLED; swap `run:` above to this to launch) ----
+# To run the agent-trace labeling experiment (FOLLOWUP_AGENT_TRACE_EXPERIMENT.md):
+#   1) generate traces:  python genetic_trace_gen.py --out pilot_runs/agentic_traces_gen1.jsonl --pop 40 --seed 7 --explode
+#   2) replace the `run:` block above with the one below (or set prompt_set/limit inline).
+# run_agent_trace:
+#   model: qwen3.5:27b
+#   prompt_set: v3_agent_trace
+#   passes: [labeler_a, labeler_b, auditor]
+#   datasets:
+#     - name: agentic_traces_per_turn
+#       path: pilot_runs/agentic_traces_gen1_per_turn.jsonl
+#       text_field: harness_prompt        # label each TURN (the action point)
+#       limit: 50
+#   audit:
+#     agreement_keys: [action_type, honesty_axis, inferred_motivation]
+#     think_leak_check: true
