@@ -80,6 +80,30 @@ def topk_features(residual, W_enc, b_enc, topk=SAE_TOPK):
                 out.append([t, int(idx[t, k]), v])
     return out
 
+@torch.no_grad()
+def all_features(residual, W_enc, b_enc, thr=1.0):
+    """FULL dictionary activations (Goodfire-dashboard parity), not just top-k.
+    residual: (G, D) generated-token residuals. Returns a compact but complete
+    representation of all 81920 features:
+      - max_profile: (81920,) max activation over tokens (for histogram/heatmap)
+      - sparse: list of [tok_pos, feat_id, act] for features that ever fired (>thr)
+    """
+    pre = (residual @ W_enc.T + b_enc).squeeze(0)   # (G, 81920)
+    pre = pre.float()
+    max_profile = pre.max(dim=0).values            # (81920,)
+    fired = pre > thr
+    coords = torch.nonzero(fired, as_tuple=False)  # (n, 2): [tok_pos, feat_id]
+    sparse = [[int(c[0]), int(c[1]), float(pre[c[0], c[1]])] for c in coords]
+    return {"d_sae": pre.shape[-1], "threshold": thr,
+            "max_profile": max_profile.tolist(), "sparse": sparse}
+
+def _feat_hist(allf, topn=50):
+    """Goodfire-style top-feature ranking across all dictionary features for layer 0.
+    Returns [(feat_id, max_act), ...] sorted desc — the dashboard's activation list."""
+    prof = allf[str(sorted(int(k) for k in allf)[0])]["max_profile"]
+    order = sorted(range(len(prof)), key=lambda i: prof[i], reverse=True)[:topn]
+    return [[i, round(prof[i], 4)] for i in order]
+
 def generate_with_hooks(model, tok, messages, max_new, layers, saes, device, decoder_layers):
     """Run one chat() through HF with SAE hooks; return (label_text, feats_by_layer).
 
@@ -115,11 +139,13 @@ def generate_with_hooks(model, tok, messages, max_new, layers, saes, device, dec
     label_text = tok.decode(gen, skip_special_tokens=True)
     # cat [prefill (1,P,D)] + [G x (1,1,D)] => (1, P+G, D); slice to generated tokens only.
     feats = {}
+    allf = {}   # FULL dictionary view (Goodfire parity): per-layer (max_profile, sparse)
     for L in layers:
         full_resid = torch.cat(captured[L], dim=1).float()   # (1, P+G, D)
         gen_resid = full_resid[0, P:, :].cpu()               # (G, D) — tok_pos 0..G-1 = label tokens
         feats[str(L)] = topk_features(gen_resid, saes[L][0], saes[L][1])
-    return label_text, feats
+        allf[str(L)] = all_features(gen_resid, saes[L][0], saes[L][1])
+    return label_text, feats, allf
 
 def main():
     ap = argparse.ArgumentParser()
@@ -210,7 +236,7 @@ def main():
             msgs_a += [{"role":"user","content":LS.FEWSHOT_USER},
                         {"role":"assistant","content":LS.FEWSHOT_ASST}]
         msgs_a.append({"role":"user","content":LS.build_user(text)})
-        raw_a, feats_a = generate_with_hooks(model, tok, msgs_a, args.max_new_tokens,
+        raw_a, feats_a, allf_a = generate_with_hooks(model, tok, msgs_a, args.max_new_tokens,
                                              layers, saes, args.device, DECODER_LAYERS)
         ja = LS.extract_label(raw_a, "fenced_json_or_last_balanced")
         # --- pass B (audit sees A's prior, same as labeler_service) ---
@@ -219,7 +245,7 @@ def main():
             msgs_b += [{"role":"user","content":LS.FEWSHOT_USER},
                         {"role":"assistant","content":LS.FEWSHOT_ASST}]
         msgs_b.append({"role":"user","content":LS.build_user(text)})
-        raw_b, feats_b = generate_with_hooks(model, tok, msgs_b, args.max_new_tokens,
+        raw_b, feats_b, allf_b = generate_with_hooks(model, tok, msgs_b, args.max_new_tokens,
                                              layers, saes, args.device, DECODER_LAYERS)
         jb = LS.extract_label(raw_b, "fenced_json_or_last_balanced")
         jaud, raw_aud, feats_aud = None, "", None
@@ -229,7 +255,7 @@ def main():
                 msgs_aud += [{"role":"user","content":LS.FEWSHOT_USER},
                              {"role":"assistant","content":LS.FEWSHOT_ASST}]
             msgs_aud.append({"role":"user","content":LS.build_user(text, ja)})
-            raw_aud, feats_aud = generate_with_hooks(model, tok, msgs_aud, args.max_new_tokens,
+            raw_aud, feats_aud, allf_aud = generate_with_hooks(model, tok, msgs_aud, args.max_new_tokens,
                                                      layers, saes, args.device, DECODER_LAYERS)
             jaud = LS.extract_label(raw_aud, "fenced_json_or_last_balanced")
 
@@ -242,9 +268,13 @@ def main():
                 "raw_a": raw_a, "raw_b": raw_b, "raw_aud": raw_aud,
                 "feats_a": feats_a, "feats_b": feats_b,
                 "feats_aud": feats_aud,
+                "allf_a": allf_a, "allf_b": allf_b, "allf_aud": allf_aud,
+                "feat_hist": _feat_hist(allf_a),
                 "meta": {"raw_a_len": len(raw_a), "raw_b_len": len(raw_b),
                           "ok": ok, "model": args.model, "dtype": args.dtype,
-                          "layers": layers, "same_inference": True}}
+                          "layers": layers, "same_inference": True,
+                          "all_features_viewable": True,
+                          "d_sae": allf_a[str(layers[0])]["d_sae"]}}
         out_f.write(json.dumps(rec) + "\n"); out_f.flush()
         print(f"[sae-course] row {r['row_idx']} ok={ok} agree={ag} "
               f"feats_a_layers={list(feats_a.keys())}", flush=True)

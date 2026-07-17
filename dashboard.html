@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>hermes-sae · SAE Activation Dashboard</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--ink:#e6edf3;--mut:#8b949e;--acc:#58a6ff;--good:#3fb950;--warn:#d29922}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  header{padding:14px 18px;border-bottom:1px solid #21262d;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  h1{font-size:16px;margin:0}
+  .row{display:flex;gap:18px;padding:18px;flex-wrap:wrap}
+  .card{background:var(--panel);border:1px solid #21262d;border-radius:10px;padding:14px;min-width:260px}
+  select,input,button{background:#0d1117;color:var(--ink);border:1px solid #30363d;border-radius:6px;padding:6px 8px;font:inherit}
+  button{cursor:pointer}
+  button:hover{border-color:var(--acc)}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{padding:3px 8px;text-align:left;border-bottom:1px solid #21262d}
+  th{color:var(--mut);position:sticky;top:0;background:var(--panel)}
+  .bar{height:8px;background:var(--acc);border-radius:3px;display:inline-block;vertical-align:middle}
+  .tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#21262d;color:var(--mut)}
+  .ok{background:#1a3a24;color:var(--good)} .bad{background:#3a2a1a;color:var(--warn)}
+  #heat{image-rendering:pixelated;border:1px solid #30363d;border-radius:6px;max-width:100%}
+  .muted{color:var(--mut)}
+  a{color:var(--acc)}
+  .scroll{max-height:520px;overflow:auto}
+  code{background:#21262d;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>hermes-sae · SAE Activation Dashboard</h1>
+  <label>JSONL <input id="file" type="file" accept=".jsonl,.json" /></label>
+  <label>Dataset row
+    <select id="rowSel"></select>
+  </label>
+  <label>Layer
+    <select id="layerSel"></select>
+  </label>
+  <label>Pass
+    <select id="passSel">
+      <option value="a">A (labeler)</option>
+      <option value="b">B (audit)</option>
+      <option value="aud">Auditor</option>
+    </select>
+  </label>
+  <span id="meta" class="muted"></span>
+</header>
+
+<div class="row">
+  <div class="card" style="flex:1 1 420px">
+    <h3>Top 50 features (all 81,920 dictionary) — by max activation</h3>
+    <div class="scroll">
+      <table id="topTbl"><thead><tr><th>#</th><th>feat</th><th>max act</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+  <div class="card" style="flex:1 1 420px">
+    <h3>Activation heatmap (token × sampled features)</h3>
+    <canvas id="heat" width="600" height="300"></canvas>
+    <p class="muted" id="heatInfo"></p>
+    <h3>Activation histogram (how many features fired)</h3>
+    <canvas id="hist" width="600" height="160"></canvas>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" style="flex:1 1 100%">
+    <h3>Labels (same inference)</h3>
+    <div id="labels" class="muted">load a file…</div>
+  </div>
+</div>
+
+<script>
+let DATA=null, REC=null;
+const $ = id => document.getElementById(id);
+
+$('file').addEventListener('change', e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    DATA = r.result.split(/\n/).filter(x=>x.trim()).map(JSON.parse);
+    const rs = $('rowSel'); rs.innerHTML='';
+    DATA.forEach((d,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`row ${d.row_idx} · ${d.dataset||''} · ${(d.meta&&d.meta.ok)?'ok':'no'}`;rs.appendChild(o);});
+    rs.onchange = load;
+    $('layerSel').onchange = render;
+    $('passSel').onchange = render;
+    load();
+  };
+  r.readAsText(f);
+});
+
+function load(){
+  REC = DATA[+$('rowSel').value];
+  const layers = Object.keys(REC.allf_a||{}).sort((a,b)=>a-b);
+  const ls = $('layerSel'); ls.innerHTML='';
+  layers.forEach(L=>{const o=document.createElement('option');o.value=L;o.textContent=`layer ${L}`;ls.appendChild(o);});
+  const m = REC.meta||{};
+  $('meta').innerHTML = `same_inference=<b>${m.same_inference}</b> · all_viewable=<b>${m.all_features_viewable}</b> · d_sae=${m.d_sae} · model=${m.model}`;
+  render();
+}
+
+function passKey(){const p=$('passSel').value;return p==='a'?'allf_a':p==='b'?'allf_b':'allf_aud';}
+
+function render(){
+  if(!REC) return;
+  const L = $('layerSel').value;
+  const af = REC[passKey()][L];
+  const prof = af.max_profile;            // 81920
+  const N = prof.length;
+  // top 50 features
+  const idx = [...Array(N).keys()].sort((a,b)=>prof[b]-prof[a]).slice(0,50);
+  const maxV = Math.max(1e-6, ...idx.map(i=>prof[i]));
+  const tb = $('topTbl').querySelector('tbody'); tb.innerHTML='';
+  idx.forEach((i,k)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${k+1}</td><td>${i}</td><td>${prof[i].toFixed(3)}</td><td><span class="bar" style="width:${Math.round(prof[i]/maxV*120)}px"></span></td>`;
+    tb.appendChild(tr);
+  });
+  // heatmap: sample up to 200 features by activation, x tokens via sparse
+  const sampled = idx.slice(0,200);
+  const G = (REC.feats_a[L]||[]).reduce((m,f)=>Math.max(m,f[0]+1),1);
+  const grid = sampled.map(fi=>new Array(G).fill(0));
+  (af.sparse||[]).forEach(([t,fi,act])=>{const s=sampled.indexOf(fi);if(s>=0)grid[s][t]=act;});
+  drawHeat(grid, sampled);
+  // histogram: how many features fired at each threshold band
+  const fired = prof.filter(v=>v>af.threshold).length;
+  $('heatInfo').textContent = `${fired} / ${N} features fired (thr=${af.threshold}). heatmap shows top ${sampled.length} features × ${G} tokens.`;
+  drawHist(prof);
+  // labels
+  const lab = REC;
+  $('labels').innerHTML =
+    `<p><span class="tag ok">A</span> <code>${JSON.stringify(lab.labeler_a)}</code></p>`+
+    `<p><span class="tag ok">B</span> <code>${JSON.stringify(lab.labeler_b)}</code></p>`+
+    (lab.auditor_a?`<p><span class="tag">AUD</span> <code>${JSON.stringify(lab.auditor_a)}</code></p>`:'')+
+    `<p class="muted">agreement A/B = ${lab.agreement_a_b} · same inference instance as SAE readout ✓</p>`;
+}
+
+function drawHeat(grid, sampled){
+  const cv=$('heat'), ctx=cv.getContext('2d');
+  const H=grid.length, W=grid[0].length;
+  cv.width=Math.max(200,W*4); cv.height=Math.max(80,H*3);
+  const img=ctx.createImageData(W,H);
+  const mx=Math.max(1e-6,...grid.flat());
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const v=grid[y][x]/mx; const i=(y*W+x)*4;
+    img.data[i]=Math.round(20+v*180); img.data[i+1]=Math.round(40+v*200); img.data[i+2]=Math.round(80+v*160); img.data[i+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+
+function drawHist(prof){
+  const cv=$('hist'), ctx=cv.getContext('2d'); cv.width=600; cv.height=160;
+  const bins=40, N=prof.length, mx=Math.max(...prof,1e-6);
+  const h=new Array(bins).fill(0);
+  prof.forEach(v=>{let b=Math.floor(v/mx*bins);if(b>=bins)b=bins-1;h[b]++;});
+  const mxh=Math.max(...h,1);
+  ctx.clearRect(0,0,600,160); ctx.fillStyle='#58a6ff';
+  for(let b=0;b<bins;b++){const x=b/ bins*600, bh=h[b]/mxh*150;ctx.fillRect(x,150-bh,600/bins-1,bh);}
+  ctx.fillStyle='#8b949e';ctx.fillText(`0`,4,158);ctx.fillText(`${mx.toFixed(1)}`,560,158);
+}
+</script>
+</body>
+</html>
