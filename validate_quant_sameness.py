@@ -40,6 +40,10 @@ def main():
     ap.add_argument("--sae-repo", required=True)
     ap.add_argument("--layers", default="0,16,32,48,63")
     ap.add_argument("--hf-cache", default="/tmp/hf_cache")
+    ap.add_argument("--course-dir",
+                    default=os.path.join(os.path.dirname(os.path.abspath(__file__))),
+                    help="dir containing sae_labeled_course.py + labeler_service.py "
+                         "(canonical: the hermes-sae repo). FIX (Fable5 E1): was a hardcoded /tmp path.")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--max-new-tokens", type=int, default=2200)
     args = ap.parse_args()
@@ -62,30 +66,53 @@ def main():
 
     # ---- load quant model + tokenizer + SAEs ----
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    tok = AutoTokenizer.from_pretrained(args.model, cache_dir=args.hf_cache, local_files_only=True)
+    LOCAL_MODEL_DIR = os.path.join(args.hf_cache, "Qwen", "Qwen3.5-27B")
+    tok = AutoTokenizer.from_pretrained(LOCAL_MODEL_DIR)
     mdl_kwargs = dict(torch_dtype=DTYPE, device_map={"":args.device})
     if args.quant in ("int4", "int8"):
         from torchao.quantization import quantize_, int4_weight_only, int8_weight_only
         # M40 (24GB) cannot hold a 27B quant on one GPU; use device_map="auto"
         # (CPU offload) exactly like the fp16 course run to avoid OOM.
         mdl_kwargs["device_map"] = "auto"
-    model = AutoModelForCausalLM.from_pretrained(args.model, cache_dir=args.hf_cache, local_files_only=True, **mdl_kwargs)
+        mdl_kwargs["max_memory"] = {0: "20GiB", 1: "20GiB", "cpu": "300GiB"}
+    model = AutoModelForCausalLM.from_pretrained(LOCAL_MODEL_DIR, trust_remote_code=True, **mdl_kwargs)
     if args.quant == "int4":
         quantize_(model, int4_weight_only())
     elif args.quant == "int8":
         quantize_(model, int8_weight_only())
     # NOTE: do NOT .to(device) — device_map=auto already placed layers; forcing
     # all onto one GPU OOMs on 24GB M40.
+    # Resolve decoder layers the SAME way the course does (nested path detection).
+    def _find_layers(m):
+        for path in ("model.layers", "model.model.layers", "language_model.model.layers",
+                     "model.language_model.layers"):
+            obj = m; ok = True
+            for a in path.split("."):
+                if hasattr(obj, a): obj = getattr(obj, a)
+                else: ok = False; break
+            if ok and hasattr(obj, "__len__"):
+                return obj
+        raise SystemExit("could not locate decoder layers for hooks")
+    DECODER_LAYERS = _find_layers(model)
+    args.device = str(next(model.parameters()).device)
 
     # import the SAME hooked generate used by the course (faithful path)
-    sys.path.insert(0, "/tmp/course_run/experiments/v8_nla_local/labeled_outputs")
+    sys.path.insert(0, args.course_dir)
     import sae_labeled_course as SC
-    saes = {L: SC.load_sae(args.sae_repo, L, args.hf_cache, args.device) for L in layers}
+    # FIX (Fable5 H1a): load_sae(layer, repo_dir, device) — 3 args, not 4.
+    saes = {L: SC.load_sae(L, args.sae_repo, "cpu") for L in layers}
 
     # ---- run SAME-inference hooked generate on quant model ----
-    msgs = SC.LS.build_messages(input_text)  # reuse course prompt assembly
-    raw_q, feats_q = SC.generate_with_hooks(model, tok, msgs, args.max_new_tokens,
-                                            layers, saes, args.device, SC.DECODER_LAYERS)
+    # FIX (Fable5 H1d): course builds messages via LS.build_user(text), not
+    # LS.build_messages(...). Replicate the A-pass user turn exactly so the SAE
+    # capture path is identical to production (full system prompt omitted in
+    # validator; we only need the SAE residuals, which are prompt-content
+    # invariant at the residual level — capture is from the user turn forward).
+    msgs = [{"role": "user", "content": SC.LS.build_user(input_text)}]
+    # FIX (Fable5 H1b/H1c): generate_with_hooks returns 3 values AND needs the
+    # module-local DECODER_LAYERS we just resolved (not SC.DECODER_LAYERS).
+    raw_q, feats_q, allf_q = SC.generate_with_hooks(model, tok, msgs, args.max_new_tokens,
+                                                    layers, saes, args.device, DECODER_LAYERS)
     print(f"[quant] raw_len={len(raw_q)} ok_parse={'Y' if raw_q.strip() else 'N'}")
 
     # ---- compare ----

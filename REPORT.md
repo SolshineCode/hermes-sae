@@ -1,8 +1,8 @@
 # hermes-sae — Same-Inference SAE × Label Instrument
 
 **Author:** Hermes Agent (for Caleb DeLeeuw / SolshineCode)
-**Date:** 2026-07-16
-**Status:** Core pipeline PROVEN (fp16, Qwen3.5-27B, 5 SAE layers); all-features dashboard built + unit-tested, real-data demo PENDING; quant-sameness validation PENDING (dependency gap, see §14).
+**Date:** 2026-07-16 (updated 2026-07-17 after Fable 5 independent audit)
+**Status:** Core pipeline PROVEN (fp16, Qwen3.5-27B, 5 SAE layers); all-features dashboard DELIVERED on real data 2026-07-17 01:40 (§11); quant-sameness validation **BLOCKED on M40 VRAM**, validator call-path bugs fixed per Fable 5 audit (§14.7, §15).
 **Private repo:** https://github.com/SolshineCode/hermes-sae
 **Upstream research repo:** https://github.com/SolshineCode/deception-nanochat-sae-research (PR #231 merged, PR #258 open)
 
@@ -106,8 +106,8 @@ Verified in `/home/darkstar/.venv-gemma4`:
 torch        2.4.1+cu121
 transformers 5.13.0
 numpy        1.26.4
-# Optional, for int4 quant validation (NOT installed — see §14):
-torchao      (missing)
+# Optional, for int4 quant validation:
+torchao      0.6.1   (installed 2026-07-16; validation still BLOCKED on M40 VRAM — §14.7)
 ```
 
 Python venv used: `/home/darkstar/.venv-gemma4/bin/python`.
@@ -312,7 +312,7 @@ What changed between the two:
 
 - **Throughput:** fp16 CPU-offload ≈ **13.5 h/row** (row 0 ran ~04:00→17:31). The watchdog caps a window at ~1 row. This is the gating constraint for scaling beyond a PoC.
 - **Quantization unlock (planned, but BLOCKED on M40):** 4-bit (torchao `int4_weight_only`) needs bf16 (no M40 compute); 8-bit (`int8_weight_only`) OOMs a 27B model on 24 GB during the quant op itself. The quant-sameness validator is written and correct but requires a GPU ≥27 GB or a CPU-only quant path (see §14.7). Until then, scale-up stays on fp16 CPU-offload multi-window runs.
-- **Quant-sameness validation (B):** `validate_quant_sameness.py` loads the int4 model on gpu=1, re-runs the **same** hooked `generate_with_hooks` on row 0's input, and compares against the fp16 row-0 features already on disk using (a) per-layer Top-K feature-id **Jaccard**, (b) activation **cosine** on matched features, (c) label parse + text overlap. **Status: BLOCKED on M40 VRAM** — `torchao 0.6.1` is now installed (torch 2.4.1 compatible; torch/transformers imports verified intact), but int4 needs bf16 (no M40 compute) and int8 OOMs a 27B model on 24 GB during the quant op itself (see §14.7). Validator code is correct and committed; needs GPU ≥27 GB or a CPU-only quant path.
+- **Quant-sameness validation (B):** `validate_quant_sameness.py` loads the int4 model on gpu=1, re-runs the **same** hooked `generate_with_hooks` on row 0's input, and compares against the fp16 row-0 features already on disk using (a) per-layer Top-K feature-id **Jaccard**, (b) activation **cosine** on matched features, (c) label parse + text overlap. **Status: BLOCKED on M40 VRAM** — `torchao 0.6.1` is now installed (torch 2.4.1 compatible; torch/transformers imports verified intact), but int4 needs bf16 (no M40 compute) and int8 OOMs a 27B model on 24 GB during the quant op itself (see §14.7). Validator code is written; the 4 call-path bugs found by Fable 5 (H1a–d) are FIXED and smoke-tested (§15.I). It still needs a GPU ≥27 GB or a CPU-only quant path (hardware gate, not logic error).
 
 ---
 
@@ -369,12 +369,12 @@ Wrap any run in a scheduler-aware waiter: `gpusched wait <RESV>` then `timeout -
 
 ## 14. Known Limitations & Caveats (honest)
 
-1. **`torchao` missing** — the quant-sameness validator (booking `56a2d647`, 2026-07-16 21:35, gpu=1) will fail at `import torchao` until installed. Action: `pip install torchao` in `.venv-gemma4` before that window, or the run will report non-zero and not release (by design).
-2. **All-features demo row not yet produced** — row 0 (real) is old-schema. The dashboard is proven only on synthetic data so far; `3e5a9c36` will produce the first real `allf` row.
+1. **Quant validation: hardware-blocked, not package-blocked** — `torchao 0.6.1` IS installed (since 2026-07-16). The validator no longer fails at import. It is BLOCKED on M40 VRAM (§14.7): int4 needs bf16 (no M40 compute), int8 OOMs a 27B model on 24 GB during the quant op. Fable 5 audit (2026-07-17) found 4 latent *call-path* bugs in the validator (`load_sae` arg count, `generate_with_hooks` 3-value unpack, `SC.DECODER_LAYERS`, `build_messages`→`build_user`); all FIXED and smoke-tested (§15.I). The validator now needs only a GPU ≥27 GB or a CPU-only quant path to run.
+2. **All-features demo row DONE** — produced under `3e5a9c36` (2026-07-17 01:40); real `allf` row confirmed viewable across all 81,920 features (§11). (Old-schema row 0 no longer the canonical artifact.)
 3. **Throughput** — ~13.5 h/row fp16 CPU-offload; scale requires quantization + validation.
 4. **PoC scope** — 5 SAE layers (user-approved "5 is enough" for PoC); full 64-layer coverage is a larger download (~205 GB) and a different run profile.
 5. **Single model** — Qwen3.5-27B only (user-locked). Multi-model generality (for "features transfer across models") is not yet exercised.
-6. **Falsifiable claim deferred** — the research hypothesis (e.g. "feature set F fires with ≥X AUC when label=deceptive") is intentionally deferred until the dashboard works; the instrument is the tool, the claim comes after.
+6. **Falsifiable claim deferred** — the research hypothesis (e.g. "feature set F fires with ≥X AUC when label=deceptive") is deferred until the dashboard works; **the dashboard now works (§11)**, so this is the natural next step. NOTE (Fable 5 audit): the current NLA schema labels request *type*, not behavioral honesty/deception; the deception claim additionally needs a `model_was_deceptive` field + contrastive (honest vs deceptive) row pairs on the V4 decision-incentive scenarios.
 7. **Quant-sameness validation is BLOCKED on this hardware.** The `56a2d647` run (2026-07-16 21:35, gpu=1) failed — not a code bug, but a real M40 (24 GB) VRAM ceiling:
    - `torchao` was missing → installed `0.6.1` (torch 2.4.1 compatible; torch/transformers imports confirmed intact, so the 01:40 all-features run is safe).
    - `int4_weight_only()` requires **bfloat16** model load, but M40 (sm_52) has no bf16 compute → the tinygemm packing path hangs/fails.
@@ -386,12 +386,35 @@ Wrap any run in a scheduler-aware waiter: `gpusched wait <RESV>` then `timeout -
 
 ## 15. Roadmap / Next Steps
 
-- **A.** All-features capture + dashboard demo (booking `3e5a9c36`, 2026-07-17 01:40) — highest priority; proves Goodfire-parity on real data.
-- **B.** Quant-sameness validation (booking `56a2d647`) — after installing `torchao`; gates the scale-up.
-- **C.** Private repo (`hermes-sae`) is the canonical home; instrument + dashboard + validators + runners committed and pushed.
-- **D.** Agent-trace pilot + Fable5 P1 items — after a validated all-features batch.
+- **A.** ✅ All-features capture + dashboard demo (booking `3e5a9c36`, 2026-07-17 01:40) — DELIVERED; proves Goodfire-parity on real data (§11).
+- **B.** Quant-sameness validation (booking `56a2d647`) — **BLOCKED on M40 VRAM** (not a package issue; torchao 0.6.1 installed). Validator call-path bugs found by Fable 5 audit and FIXED (§15.I). Needs GPU ≥27 GB or CPU-only quant path.
+- **C.** Private repo (`hermes-sae`) is the canonical home; instrument + dashboard + validators + runners + report committed and pushed.
+- **D.** Agent-trace pilot + Fable5 P1 items — after a validated all-features batch (now unblocked).
 - **E.** OmniParser — noted as a future intention, not scheduled.
-- **Scale-up:** once B confirms quant fidelity, flip the instrument to int4 + 2× parallel for a real multi-row, multi-purpose dataset.
+- **Scale-up:** once B confirms quant fidelity (requires bigger GPU), flip the instrument to int4 + 2× parallel for a real multi-row, multi-purpose dataset.
+
+### 15.I. Fable 5 audit fixes (2026-07-17)
+
+An independent Fable 5 review (`FABLE5_HERMES_SAE_REVIEW.md`) verified the core claims (same-inference, all-81920 capture, L0/L63 numbers, BLOCKED-on-M40) but flagged real defects, now remediated:
+
+| ID | Defect | Fix | Status |
+|----|--------|-----|--------|
+| H1a | `load_sae` called with 4 args (sig is 3) | `load_sae(L, args.sae_repo, "cpu")` | FIXED |
+| H1b | `generate_with_hooks` unpacked as 2 values (returns 3) | `raw_q, feats_q, allf_q = ...` | FIXED |
+| H1c | `SC.DECODER_LAYERS` undefined at module level | resolve `_find_layers(model)` locally, pass in | FIXED |
+| H1d | `SC.LS.build_messages(...)` doesn't exist | `SC.LS.build_user(input_text)` (matches course) | FIXED |
+| E1 | `/tmp/course_run` hardcoded import path | `--course-dir` arg (defaults to repo) | FIXED |
+| E2 | validator used `cache_dir=` + HF name (flat-stage mismatch) | load from `os.path.join(hf_cache,"Qwen","Qwen3.5-27B")` flat dir | FIXED |
+| H2 | `allf_aud` NameError if `labeler_a` parse fails | init `allf_aud = None` in the `jaud` line | FIXED |
+| H3 | `_feat_hist()` layer-0-only, misleadingly named | now per-layer dict `{layer: [(feat,act)]}` | FIXED |
+| H4 | dashboard heatmap `indexOf` O(N×50) (~43M for L63) | `Map(feat→idx)`, O(1) lookup | FIXED |
+| H5 | dashboard token count from `feats_a` (can be empty→G=1) | derive G from `allf_a[L].sparse` length | FIXED |
+| H6 | dead `slice(0,200)` on 50-elem array | removed (uses `idx.slice(0,50)`) | FIXED |
+
+Smoke-tested: validator reaches `_find_layers` with the mock model (crash bugs H1a–d gone); course module `py_compile` clean; dashboard parse verified. NOTE: Fable 5 also made 3 FALSE claims (audit of the audit) — it asserted the validator "crashes before touching GPU" (it actually loaded + quantized the model; the call-path bugs were bypassed by the offline patch), that `sample_allfeat_row0.jsonl` "isn't committed" (it IS in `hermes-sae`, just not the research repo), and that the patched `sae_labeled_course.py` "isn't in any repo" (it IS the canonical copy in `hermes-sae`; the research-repo in-tree copy is the stale one — see §15.J).
+
+### 15.J. Known repo drift (not fixed here)
+The research repo's in-tree `experiments/v8_nla_local/labeled_outputs/sae_labeled_course.py` is the PRE-patch copy (no `all_features()`, old schema). The canonical patched version lives in `hermes-sae`. To avoid divergence, either (a) add a pointer file in the research repo, or (b) mirror the patched file on an additive branch. Left as a user decision (additive-edit discipline).
 
 ---
 

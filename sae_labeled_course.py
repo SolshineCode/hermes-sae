@@ -98,11 +98,15 @@ def all_features(residual, W_enc, b_enc, thr=1.0):
             "max_profile": max_profile.tolist(), "sparse": sparse}
 
 def _feat_hist(allf, topn=50):
-    """Goodfire-style top-feature ranking across all dictionary features for layer 0.
-    Returns [(feat_id, max_act), ...] sorted desc — the dashboard's activation list."""
-    prof = allf[str(sorted(int(k) for k in allf)[0])]["max_profile"]
-    order = sorted(range(len(prof)), key=lambda i: prof[i], reverse=True)[:topn]
-    return [[i, round(prof[i], 4)] for i in order]
+    """Goodfire-style top-feature ranking across all 81920 dictionary features,
+    PER LAYER (FIX Fable5 H3: was layer-0-only and misleadingly named).
+    Returns {layer_str: [(feat_id, max_act), ...] sorted desc}."""
+    out = {}
+    for L in allf:
+        prof = allf[L]["max_profile"]
+        order = sorted(range(len(prof)), key=lambda i: prof[i], reverse=True)[:topn]
+        out[str(L)] = [[i, round(prof[i], 4)] for i in order]
+    return out
 
 def generate_with_hooks(model, tok, messages, max_new, layers, saes, device, decoder_layers):
     """Run one chat() through HF with SAE hooks; return (label_text, feats_by_layer).
@@ -248,7 +252,7 @@ def main():
         raw_b, feats_b, allf_b = generate_with_hooks(model, tok, msgs_b, args.max_new_tokens,
                                              layers, saes, args.device, DECODER_LAYERS)
         jb = LS.extract_label(raw_b, "fenced_json_or_last_balanced")
-        jaud, raw_aud, feats_aud = None, "", None
+        jaud, raw_aud, feats_aud, allf_aud = None, "", None, None
         if ja:
             msgs_aud = [{"role":"system","content":AUDITOR_SYS}]
             if prof and prof.get("few_shot"):

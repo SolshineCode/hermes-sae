@@ -117,11 +117,21 @@ function render(){
     tr.innerHTML=`<td>${k+1}</td><td>${i}</td><td>${prof[i].toFixed(3)}</td><td><span class="bar" style="width:${Math.round(prof[i]/maxV*120)}px"></span></td>`;
     tb.appendChild(tr);
   });
-  // heatmap: sample up to 200 features by activation, x tokens via sparse
-  const sampled = idx.slice(0,200);
-  const G = (REC.feats_a[L]||[]).reduce((m,f)=>Math.max(m,f[0]+1),1);
-  const grid = sampled.map(fi=>new Array(G).fill(0));
-  (af.sparse||[]).forEach(([t,fi,act])=>{const s=sampled.indexOf(fi);if(s>=0)grid[s][t]=act;});
+  // heatmap: sample top features by activation, x tokens via sparse
+  // FIX (Fable5 H4): use a Map(feat_id->sampled_index) for O(1) lookup instead of
+  // O(50) indexOf per sparse entry — else L63's 856k entries = ~43M searches.
+  const sampled = idx.slice(0, 50);
+  // FIX (Fable5 H5): token count from the SAME allf dict (sparse length), not feats_a
+  // (which can be empty and would yield G=1). Fallback to prof-length tokens.
+  const G = (af.sparse && af.sparse.length)
+              ? Math.max(1, ...af.sparse.map(e => e[0] + 1))
+              : prof.length;
+  const fmap = new Map(sampled.map((fi, s) => [fi, s]));
+  const grid = sampled.map(fi => new Array(G).fill(0));
+  (af.sparse || []).forEach(([t, fi, act]) => {
+    const s = fmap.get(fi);
+    if (s !== undefined && t < G) grid[s][t] = act;
+  });
   drawHeat(grid, sampled);
   // histogram: how many features fired at each threshold band
   const fired = prof.filter(v=>v>af.threshold).length;
