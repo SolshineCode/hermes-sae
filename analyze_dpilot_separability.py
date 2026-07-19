@@ -79,34 +79,39 @@ def run(dpilot_jsonl, trace_path, out_path, auc_thresh=0.7, seed=0):
             grp = "ins" if role=="insider" else "cln"
             allf = rec.get("allf_a",{})
             for L, blk in allf.items():
-                sparse = blk.get("sparse",[])
+                sparse = blk.get("sparse",[])  # entries are [token_idx, feat_id, activation]
                 per_layer.setdefault(L, {})
-                for feat, val in sparse:
+                for e in sparse:
+                    feat = int(e[1]); val = float(e[2])
                     per_layer[L].setdefault(feat, {"ins":[], "cln":[]})
-                    per_layer[L][feat][grp].append(float(val))
+                    per_layer[L][feat][grp].append((ridx, val))  # keep PER-ROW for permutation null
             n_rows += 1
-    # compute AUC per feature per layer
+    # compute AUC per feature per layer (real)
     results = {}
     summary = {}
+    rows_by_layer = {}   # L -> list of row_idx that had any activation
     for L in sorted(per_layer, key=lambda x:int(str(x).split('.')[-1]) if '.' in str(x) else int(x)):
         feats = per_layer[L]
         rows_out = []
+        seen_rows = set()
         for feat, g in feats.items():
             if not g["ins"] or not g["cln"]:
                 continue
-            auc = rank_auc(g["ins"], g["cln"])
-            ins_mean = statistics.fmean(g["ins"])
-            cln_mean = statistics.fmean(g["cln"])
+            ins_vals = [v for _,v in g["ins"]]
+            cln_vals = [v for _,v in g["cln"]]
+            seen_rows.update(r for r,_ in g["ins"]); seen_rows.update(r for r,_ in g["cln"])
+            auc = rank_auc(ins_vals, cln_vals)
             rows_out.append({
                 "feat": int(feat),
                 "auc": round(auc,4),
-                "insider_mean": round(ins_mean,4),
-                "clean_mean": round(cln_mean,4),
-                "n_insider": len(g["ins"]),
-                "n_clean": len(g["cln"]),
+                "insider_mean": round(statistics.fmean(ins_vals),4),
+                "clean_mean": round(statistics.fmean(cln_vals),4),
+                "n_insider": len(ins_vals),
+                "n_clean": len(cln_vals),
             })
         rows_out.sort(key=lambda r: abs(r["auc"]-0.5), reverse=True)
         results[str(L)] = rows_out
+        rows_by_layer[str(L)] = seen_rows
         n_sig = sum(1 for r in rows_out if abs(r["auc"]-0.5) >= (auc_thresh-0.5))
         summary[str(L)] = {
             "n_features_fired": len(rows_out),
@@ -114,16 +119,52 @@ def run(dpilot_jsonl, trace_path, out_path, auc_thresh=0.7, seed=0):
             "top_auc": rows_out[0]["auc"] if rows_out else None,
             "top_feat": rows_out[0]["feat"] if rows_out else None,
         }
-    # NULL check: shuffle roles, recompute top AUC per layer
+    # NULL check (proper VALUE-permutation test): for each layer, fix the group
+    # labels per row, but SHUFFLE the activation VALUES across rows (break the
+    # row->activation link). Recompute per-feature AUC under the permuted values.
+    # This is the correct association null for "does feature X separate groups":
+    # if the observed pairing is better than random value-row assignment -> real signal.
+    # (Label-permutation would be invalid here because a feature's activation can
+    #  itself be group-determined -- it would confound the very claim being tested.)
     rng = random.Random(seed)
     null_summary = {}
     for L in results:
-        aucs = [r["auc"] for r in results[L]]
-        # shuffle group labels across this layer's feature activations
-        shuffled = rng.sample(aucs, len(aucs))
-        null_summary[L] = {
-            "null_top_abs_auc_off05": round(max(abs(a-0.5) for a in shuffled),4),
-            "null_mean_abs_auc_off05": round(statistics.fmean(abs(a-0.5) for a in shuffled),4),
+        feats = per_layer[L]
+        cand = [f for f,g in feats.items() if g["ins"] and g["cln"]]
+        if not cand:
+            continue
+        # build per-feature: fixed group labels (by row) + the pool of activation values
+        # (across all rows for that feature) to permute
+        feat_data = {}
+        for f in cand:
+            # group label per row (a feature may fire >1 time/row; take max val/row)
+            ins_by_row = {}
+            for r,v in feats[f]["ins"]:
+                ins_by_row[r] = max(ins_by_row.get(r,0.0), v)
+            cln_by_row = {}
+            for r,v in feats[f]["cln"]:
+                cln_by_row[r] = max(cln_by_row.get(r,0.0), v)
+            labels = {**{r:"ins" for r in ins_by_row}, **{r:"cln" for r in cln_by_row}}
+            vals = list(ins_by_row.values()) + list(cln_by_row.values())
+            rows = list(labels.keys())
+            feat_data[f] = (rows, labels, vals)
+        # subsample features for speed (null only needs the best achievable AUC dist)
+        sub = cand if len(cand) <= 600 else rng.sample(cand, 600)
+        best_abs = 0.0
+        n_sim = 100
+        for _ in range(n_sim):
+            sim_best = 0.0
+            for f in sub:
+                rows, labels, vals = feat_data[f]
+                perm = vals[:]; rng.shuffle(perm)  # permute VALUES across rows
+                iv = [perm[i] for i,r in enumerate(rows) if labels[r]=="ins"]
+                cv = [perm[i] for i,r in enumerate(rows) if labels[r]=="cln"]
+                if iv and cv:
+                    sim_best = max(sim_best, abs(rank_auc(iv, cv)-0.5))
+            best_abs = max(best_abs, sim_best)
+        null_summary[str(L)] = {
+            "null_top_abs_auc_off05": round(best_abs,4),
+            "note": "value-permutation null (break row->activation link); small => real signal not chance",
         }
     out = {
         "n_rows_analyzed": n_rows,
@@ -151,16 +192,15 @@ def self_test():
         for L in layers:
             sparse = []
             for feat in range(1000):
-                # baseline activation
-                base = rng.random()*0.1
-                if feat in (100,500,777) and role=="insider":
-                    base += rng.uniform(1.5,2.5)  # strong signal
-                elif role=="insider":
-                    base += rng.random()*0.2
+                if feat in (100,500,777):
+                    # SIGNAL: higher mean on insider, but CONTINUOUS + overlapping
+                    # (so a permutation null is meaningful, unlike binary presence)
+                    base = rng.gauss(2.0,0.6) if role=="insider" else rng.gauss(1.0,0.6)
                 else:
-                    base += rng.random()*0.2
+                    # noise feature: same distribution for both groups
+                    base = rng.gauss(0.5,0.4)
                 if base > 0.05:
-                    sparse.append((feat, round(base,4)))
+                    sparse.append([0, feat, round(base,4)])  # real format: [token_idx, feat_id, activation]
             allf[L] = {"sparse": sparse, "d_sae": 81920}
         recs.append({"row_idx": i, "meta": {"ok": True}, "allf_a": allf})
     # write temp trace dataset (role order matches)
@@ -181,10 +221,14 @@ def self_test():
         print(f"  L{L}: top_feat={top['feat']} auc={top['auc']} | signal feats in top10={hits}/3")
         if hits < 3:
             ok = False
-    # null should be near 0.5
-    nl = out["null_shuffle"]["0"]["null_mean_abs_auc_off05"]
-    print(f"  null mean |auc-0.5| = {nl} (should be small)")
-    print("[self-test]", "PASS ✅" if ok and nl < 0.15 else "FAIL ❌")
+    # null is the "best feature under chance value-permutation" over ~1000 features
+    # (multiple-comparisons => non-zero). The guard is the GAP: real signal must
+    # clearly beat the permutation best-of-many null, not an absolute null threshold.
+    nl = out["null_shuffle"]["0"]["null_top_abs_auc_off05"]
+    real_top = out["top_per_layer"]["0"][0]["auc"]
+    gap = real_top - 0.5 - nl
+    print(f"  null top |auc-0.5| = {nl} | real top AUC = {real_top} | gap = {round(gap,4)}")
+    print("[self-test]", "PASS ✅" if ok and real_top >= 0.7 and gap >= 0.10 else "FAIL ❌")
     return ok
 
 if __name__ == "__main__":

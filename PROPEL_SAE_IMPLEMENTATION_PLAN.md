@@ -28,26 +28,50 @@ P5  Docs/PRs: commit additively, update reports, push.
 **Why blocking:** V2 reward + the falsifiable claim both consume D_Pilot's per-turn
 SAE profiles joined to `scenario.role`. Without this, P1/P2(V2) cannot proceed.
 **Action:**
-1. Book both GPUs via gpusched for a ~4h window (run is ~13.5h/row × 578 turns is
-   too long for one sitting — see note). REALITY CHECK: 578 turns × ~13.5h = ~7,800h.
-   That is NOT feasible in one booking. **Revise scope**: D_Pilot must run a *sample*
-   (e.g. 20–40 turns spanning insider/clean + all 5 phases + both pressures) to validate
-   the pipeline + produce the first separability estimate, NOT the full 578. Full run is a
-   later scale-out. Document this scope cut explicitly (falsification-first: a 40-turn
-   pilot is enough to detect a large effect; underpowered for small effects — state that).
+1. **Scope = pilot sample, honest per-session yield.** One booked slot (~4h, both GPUs)
+   yields only **~1 turn** at ~13.5h/row (the agent-trace file is per-TURN, so each
+   row IS one turn — but the 27B instrument is the bottleneck: ~13.5h per generate()).
+   Therefore a 20–40 turn pilot is **NOT one booking** — it is ~20–40 separate
+   booked sessions (or one very long multi-day reservation). State this explicitly:
+   - Per 4h slot: ~0.3 turns. To get 40 turns needs ~120h of booked GPU time
+     (~30 separate 4h slots) OR one continuous multi-day reservation.
+   - **Revised pilot target:** 2–4 turns spanning insider/clean + ≥2 phases, enough to
+     smoke-test the join + separability pipeline end-to-end (NOT to claim an effect).
+     **Session math (M3):** at ~0.3 turns/4h slot, 2 turns ≈ **7 sessions**, 4 turns ≈
+     **13 sessions**. Calendar accordingly. Each session MUST independently arm the
+     watchdog before the slot starts — do NOT assume a watchdog persists across sessions
+     (the prior slot 3da0c561 expired unused because NO process/waiter was armed).
+   - **Launch-verification step (M3):** before booking each slot, confirm
+     `run_d_pilot_agent_trace.sh` exists at the expected path AND is executable
+     (`test -x`), and that the gpusched reservation is actually held (poll `gpusched
+     status`) before launching. Do not launch into an unconfirmed slot.
+   - Falsification-first note: a 2–4 turn pilot detects only a *catastrophic* signal;
+     underpowered for real effects. The pre-registered H1/H0 stands for the full run.
 2. Launch `run_d_pilot_agent_trace.sh` (already staged in /tmp/hermes-sae) from the
    working copy `/tmp/course_run/experiments/v8_nla_local/labeled_outputs/` where
    prompts + dataset resolve. Waiter MUST hard-stop before slot end (existing watchdog).
-3. Capture `sae_course.jsonl` (per-turn, allf_a[L].sparse for 5 layers).
+   Capture `sae_course.jsonl` (per-turn, allf_a[L].sparse for 5 layers).
 **Deliverable:** real D_Pilot jsonl + confirmation row_idx→role join works.
 
 ## 3. P1 — Separability analysis (CPU; no GPU)
-**Action:** run `analyze_dpilot_separability.py --dpilot-jsonl <P0 out>
-  --trace-dataset <agentic_traces_gen1_per_turn.jsonl> --out <sep.json>`.
+**Two distinct P1 runs — DO NOT CONFLATE:**
+- **Pilot P1** (from 2–4 turn P0 data): PIPELINE SMOKE-TEST ONLY. Verdict =
+  "pipeline intact / broken." NO H1/H0 claim. NO V2 feature set. Output
+  `pilot_separability.json`. (M2: a 2–4 turn pilot is underpowered; any
+  top-AUC feature is spurious and must NOT gate V2.)
+- **Full-scale P1** (from the accumulated multi-session run, ≥10 turns/group):
+  this is the PRE-REGISTERED falsifiable test. Its verdict gates V2.
+**Action (full-scale):** run `analyze_dpilot_separability.py --dpilot-jsonl <full P0 out>
+  --trace-dataset <agentic_traces_gen1_per_turn.jsonl> --out separability.json`.
 Apply pre-registered decision rule (FALSIFIABLE_CLAIM_DESIGN.md §6):
 - ≥1 feature AUC≥0.70 FDR<0.05 surviving phase/pressure → H1 supported.
-- Null-shuffle sanity must collapse to ~0.05.
-**Deliverable:** `separability.json` + verdict (H1/H0) written before interpretation.
+- **Null-shuffle sanity (corrected, M1):** the code's `null_top_abs_auc_off05` is the
+  MAX over 100 sims of the BEST |AUC−0.5| across subsampled features. Under true H0 this
+  sits at ~0.10–0.15 (NOT ~0.05 — multiple-testing over features × sims drives it up;
+  self-test confirms ~0.28 for 1000 features). The operative check is
+  **observed top |AUC−0.5| >> null_top_abs_auc_off05**, NOT that the null reaches 0.05.
+**Deliverable (full-scale):** `separability.json` + verdict (H1/H0) written before interpretation.
+  **Do NOT run the decision rule on pilot data.**
 
 ## 4. P2 — PROPEL-SAE reward framework: V1 baseline (new code, additive)
 **What to build (does NOT modify base instrument — D1):**
@@ -62,12 +86,22 @@ Apply pre-registered decision rule (FALSIFIABLE_CLAIM_DESIGN.md §6):
 **Test:** unit-test v1 on the real all-features row (sae_realfeat_analysis.json) —
   confirm it returns a finite, monotonic reward across layers (L32 should score high
   given its clustering peak).
+  **Max-per-feature dedup check (M4):** confirm `_max_per_feature()` is active. In
+  sae_realfeat_analysis.json, L0 top-5 slots are all feature 71349 (repeated 5×), L16
+  2628×5, L48 27644×5, L63 80518×4. The V1 reward for these layers MUST equal the reward
+  for a synthetic record containing that feature ONCE — repeated token-position entries
+  for the same feat_id must NOT inflate the band score (length-bias reward-hack guard).
 **Deliverable:** v1 function + harness flag + unit test, all additive.
+**Note (parallelism):** V1 reward code does NOT depend on P1/D_Pilot data — build and
+  unit-test it NOW, in parallel with pilot data collection.
 
-## 5. P3 — V2 / V3 / V4 (depends on P1 result)
-- **V2 (separability-feature reward):** if P1 = H1, load the discovered feature set
-  `S*` from separability.json; `sae_reward_v2(allf_a) = Σ_{f∈S*} act_f`. If P1 = H0,
-  V2 is DEFERRED (no features to reward) — document the null honestly.
+## 5. P3 — V2 / V3 / V4 (depends on FULL-SCALE P1 result — NOT pilot)
+- **V2 (separability-feature reward):** if **full-scale** P1 = H1 (≥10/group, pre-registered
+  decision rule), load the discovered feature set `S*` from separability.json (the FULL
+  run output, not pilot_separability.json); `sae_reward_v2(allf_a) = Σ_{f∈S*} act_f`.
+  If full-scale P1 = H0, V2 is DEFERRED (no features to reward) — document the null
+  honestly. **Pilot P1 output (pilot_separability.json) MUST NOT be used to build V2 —
+  it is a smoke-test only (M2).**
 - **V3 (WCO min-over-layers):** `reward = min_L(frontier_mass(L))` — anti-collapse
   min-operator across layers (PROPEL's ensemble-min, mapped to layers).
 - **V4 (validity-gated):** empty/short generation → r_bad before any SAE reward.

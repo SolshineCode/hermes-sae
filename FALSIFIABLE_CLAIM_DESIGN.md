@@ -50,8 +50,14 @@ deception signal. That is still a publishable, falsification-first outcome.
    found L32 is the semantic-clustering peak (top-50 decoder cosine 0.33 vs L16 0.0075)
    and activation mass grows ~1400× L0→L63. Prediction: if a behavioral signal exists,
    it is most likely at L32 or deeper — a directional prior, not a post-hoc excuse.
-3. **Null-shuffle sanity:** shuffle roles across rows; top per-layer |AUC−0.5| must
-   collapse toward ~0.05 (chance). Already observed in self-test.
+3. **Null-shuffle sanity (corrected, M1):** the code runs a VALUE-permutation null
+   (fixes group labels per row, shuffles activation values across rows, recomputes
+   best-feature |AUC−0.5| over 100 sims on a subsampled feature set). The reported
+   `null_top_abs_auc_off05` is the MAX-over-sims of the best feature — so under true H0
+   it sits at ~0.10–0.15 with 600 features / 100 sims (NOT ~0.05: multiple-testing over
+   features × sims inflates it; self-test shows ~0.28 for 1000 features). The operative
+   sanity check is **observed top |AUC−0.5| >> null_top_abs_auc_off05**, not that the null
+   reaches ~0.05. Already observed in self-test (real 0.93 vs null 0.28).
 
 ## 4. Pre-registered null-result condition (explicit, per your falsification-first doctrine)
 If H0 holds (no feature ≥0.70 post-FDR at any layer), the conclusion is:
