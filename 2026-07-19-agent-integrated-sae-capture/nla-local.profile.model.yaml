@@ -1,0 +1,14 @@
+# Hermes profile `nla-local` — model block
+# Created with: hermes profile create nla-local --clone
+# then: hermes -p nla-local config set model.provider custom
+#       hermes -p nla-local config set model.base_url http://127.0.0.1:8000/v1
+#       hermes -p nla-local config set model.default gemma-4-e2b
+#       hermes -p nla-local config set model.api_key sk-local
+#       hermes -p nla-local config set model.context_length 65536
+# The rest of config.yaml is the default Hermes profile (unchanged).
+model:
+  default: gemma-4-e2b
+  provider: custom
+  base_url: http://127.0.0.1:8000/v1
+  api_key: sk-local
+  context_length: 65536
