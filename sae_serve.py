@@ -200,6 +200,10 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0))
         req = json.loads(self.rfile.read(n) or b"{}")
         messages = req.get("messages", [])
+        # OPTIONAL: caller may pass row_idx / meta for join-safe, resume-safe capture.
+        # (sae_serve echoes them into the log record so the capture file is self-contained.)
+        row_idx = req.get("row_idx", None)
+        meta_in = req.get("meta", {}) or {}
         max_new = int(req.get("max_tokens") or req.get("max_completion_tokens") or 512)
         temperature = float(req.get("temperature", 0.0) or 0.0)
         t0 = time.time()
@@ -221,6 +225,7 @@ class Handler(BaseHTTPRequestHandler):
                 "prompt_len": P, "gen_len": G, "gen_text": text,
                 "layers": self.engine.layers, "feats_topk": feats,
                 "same_inference": True, "timing": {"seconds": round(dt, 3)},
+                "row_idx": row_idx, "meta": meta_in,
             }
             if allf:
                 rec["allf"] = allf
@@ -361,7 +366,7 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8077)
     ap.add_argument("--model-name", default="sae-local")
-    ap.add_argument("--log", default="runs/agent_sae_history.jsonl")
+    ap.add_argument("--log", default="/home/darkstar/hermes_cache/dpilot_capture/sae_history.jsonl")
     ap.add_argument("--allf", action="store_true",
                     help="also log FULL-dictionary activations (large)")
     ap.add_argument("--allf-thr", type=float, default=1.0)
