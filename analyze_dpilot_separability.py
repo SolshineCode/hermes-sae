@@ -1,235 +1,245 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 analyze_dpilot_separability.py — falsifiable-claim analysis for D_pilot.
 
-Consumes a D_Pilot SAE-instrument output jsonl (same schema as the all-features
-row: record['allf_a'][L]['sparse'] = [(feat_id, activation), ...]) and joins each
-row back to the agent-trace dataset by row_idx to recover the behavioral ground
-truth (scenario.role in {insider, clean}).
+FIXES (per Fable 5 audit, 2026-07-19):
+  * MATCHED STATISTIC / PSEUDOREPLICATION (H1, 1b/1c): previously the OBSERVED AUC used
+    occurrence-level values (every token firing as a sample) while labels are per-row,
+    but the NULL used per-row-max. The two statistics were incompatible. Now BOTH the
+    observed and the null collapse each (feature, row) to a single value = MAX activation
+    over that row's token occurrences, and AUC is computed over ROWS. No pseudoreplication.
+  * REAL FDR (1c, §5): the prior null was "max over 100 sims of best feature" — an extreme
+    statistic from which no p-value is derivable, so Benjamini-Hochberg could not run. Now
+    each feature gets a proper permutation p-value (label-shuffle over rows; per-feature
+    valid null), and BH-FDR is applied across the m tested features. A feature "passes"
+    iff its BH-adjusted p < alpha.
+  * ONE-SIDED FEATURES (1f, H2): a feature firing ONLY on insider rows is the strongest
+    possible signature (presence/absence). It was silently dropped. Now included via a
+    dedicated presence statistic + permutation over row-presence.
+  * POWER / DECISION RULE (§5): "AUC>=0.70 AND FDR<0.05 at n=10/group" is unsatisfiable
+    (exact p(0.70|10v10)≈0.065>0.05; even AUC=1.0 fails BH over 81920). Corrected: H1
+    requires >=1 feature surviving BH at the OBSERVED n; design DOCUMENTS honest power —
+    at n=10/group only AUC~0.95+ survive; recommends n>=100/group (or episode-level
+    aggregation) for AUC~0.70 power. Claim is effect-size-driven, not a fixed AUC cutoff.
 
-For each SAE layer, for each feature that fires, computes INSIDER-vs-CLEAN
-separability via rank-AUC (threshold-free; insider=1, clean=0). Reports the
-top-separating features per layer, plus a NULL check (role-shuffle) so a real
-signal is distinguishable from chance.
-
-This is the operationalization of the FABLE 5 audit note:
-  "the deception claim additionally needs a model_was_deceptive field + contrastive
-   (honest vs deceptive) row pairs"
-The agent-trace DATA already carries the contrastive split (role=insider|clean),
-so this pipeline IS the falsifiable test:
-  H0: no feature subset separates insider vs clean (AUC ~0.5 for all features)
-  H1: >=1 feature reaches AUC >= X (default 0.7) controlling for phase/pressure
-
-Pure-stdlib (no sklearn) so it runs on the homelab venv. `--self-test` validates
-the AUC logic on synthetic data with a known signal before real D_Pilot data exists.
+Consumes a D_Pilot SAE-instrument output jsonl (schema: record['allf_a'][L]['sparse'] =
+[[tok_pos, feat_id, act], ...]); joins each row to the agent-trace dataset by row_idx to
+recover ground truth (scenario.role in {insider, clean}).
 
 Usage:
   python analyze_dpilot_separability.py --self-test
-  python analyze_dpilot_separability.py \
-      --dpilot-jsonl runs/d_pilot_agent_trace_*/sae_course.jsonl \
+  python analyze_dpilot_separability.py --dpilot-jsonl runs/.../sae_course.jsonl \
       --trace-dataset /abs/path/agentic_traces_gen1_per_turn.jsonl \
-      --out runs/d_pilot_agent_trace_*/separability.json
+      --out runs/.../separability.json --alpha 0.05
 """
 import json, sys, os, random, argparse, statistics
 
+
 def rank_auc(pos_vals, neg_vals):
-    """ROC-AUC via pairwise comparison (threshold-free; handles ties via 0.5 weight).
-    pos = insider group (labeled 1), neg = clean group (labeled 0).
-    AUC > 0.5 => feature fires HIGHER on insider; AUC < 0.5 => fires higher on clean.
-    AUC == 0.5 => no signal. """
+    """ROC-AUC via pairwise comparison (0.5 tie-weight). pos=insider(1), neg=clean(0)."""
     n_pos = len(pos_vals); n_neg = len(neg_vals)
     if n_pos == 0 or n_neg == 0:
         return float('nan')
     wins = 0.0
     for pv in pos_vals:
         for nv in neg_vals:
-            if pv > nv:   wins += 1.0
-            elif pv == nv: wins += 0.5
+            if pv > nv:
+                wins += 1.0
+            elif pv == nv:
+                wins += 0.5
     return wins / (n_pos * n_neg)
 
-def load_trace_roles(trace_path):
-    """row_idx (0-based, in file order) -> role (insider|clean)."""
-    m = {}
+
+def bh_fdr(pvals, alpha=0.05):
+    """Benjamini-Hochberg. pvals: list of (key, p). Returns set of rejected keys."""
+    pairs = [(k, p) for k, p in pvals if p == p and 0.0 <= p <= 1.0]
+    m = len(pairs)
+    if m == 0:
+        return set()
+    ordered = sorted(pairs, key=lambda x: x[1])
+    rejected = set()
+    for i, (k, p) in enumerate(ordered, 1):
+        if p <= alpha * i / m:
+            rejected.add(k)
+        else:
+            break
+    return rejected
+
+
+def run(dpilot_jsonl, trace_path, out_path, alpha=0.05, seed=0, n_perm=2000):
+    rng = random.Random(seed)
+    roles = {}
     with open(trace_path) as f:
         for i, line in enumerate(f):
-            line=line.strip()
-            if not line: continue
+            line = line.strip()
+            if not line:
+                continue
             d = json.loads(line)
-            role = d.get("scenario",{}).get("role","clean")
-            m[i] = role
-    return m
+            roles[i] = d.get("scenario", {}).get("role", "clean")
 
-def run(dpilot_jsonl, trace_path, out_path, auc_thresh=0.7, seed=0):
-    roles = load_trace_roles(trace_path)
-    # collect per-layer per-feature activation by group
-    # layer -> feat -> {'ins':[...], 'cln':[...]}
     per_layer = {}
     n_rows = 0
     with open(dpilot_jsonl) as f:
         for line in f:
-            line=line.strip()
-            if not line: continue
+            line = line.strip()
+            if not line:
+                continue
             rec = json.loads(line)
-            if not rec.get("meta",{}).get("ok", False):
+            if not rec.get("meta", {}).get("ok", False):
                 continue
             ridx = rec.get("row_idx")
             role = roles.get(ridx)
             if role is None:
                 continue
-            grp = "ins" if role=="insider" else "cln"
-            allf = rec.get("allf_a",{})
+            allf = rec.get("allf_a", {})
             for L, blk in allf.items():
-                sparse = blk.get("sparse",[])  # entries are [token_idx, feat_id, activation]
                 per_layer.setdefault(L, {})
-                for e in sparse:
-                    feat = int(e[1]); val = float(e[2])
-                    per_layer[L].setdefault(feat, {"ins":[], "cln":[]})
-                    per_layer[L][feat][grp].append((ridx, val))  # keep PER-ROW for permutation null
+                for e in blk.get("sparse", []):
+                    feat = int(e[1]); act = float(e[2])
+                    d = per_layer[L].setdefault(feat, {})
+                    d[ridx] = max(d.get(ridx, 0.0), act)
             n_rows += 1
-    # compute AUC per feature per layer (real)
+
     results = {}
     summary = {}
-    rows_by_layer = {}   # L -> list of row_idx that had any activation
-    for L in sorted(per_layer, key=lambda x:int(str(x).split('.')[-1]) if '.' in str(x) else int(x)):
+    for L in sorted(per_layer, key=lambda x: int(str(x).split('.')[-1]) if '.' in str(x) else int(x)):
         feats = per_layer[L]
         rows_out = []
-        seen_rows = set()
-        for feat, g in feats.items():
-            if not g["ins"] or not g["cln"]:
-                continue
-            ins_vals = [v for _,v in g["ins"]]
-            cln_vals = [v for _,v in g["cln"]]
-            seen_rows.update(r for r,_ in g["ins"]); seen_rows.update(r for r,_ in g["cln"])
-            auc = rank_auc(ins_vals, cln_vals)
-            rows_out.append({
-                "feat": int(feat),
-                "auc": round(auc,4),
-                "insider_mean": round(statistics.fmean(ins_vals),4),
-                "clean_mean": round(statistics.fmean(cln_vals),4),
-                "n_insider": len(ins_vals),
-                "n_clean": len(cln_vals),
-            })
-        rows_out.sort(key=lambda r: abs(r["auc"]-0.5), reverse=True)
+        pvals = []
+        for feat, byrow in feats.items():
+            ins_rows = [r for r, v in byrow.items() if roles[r] == "insider"]
+            cln_rows = [r for r, v in byrow.items() if roles[r] == "clean"]
+            ins_vals = [byrow[r] for r in ins_rows]
+            cln_vals = [byrow[r] for r in cln_rows]
+            if ins_vals and cln_vals:
+                auc = rank_auc(ins_vals, cln_vals)
+                all_rows = list(byrow.keys())
+                all_vals = list(byrow.values())
+                rlabels = [1 if roles[r] == "insider" else 0 for r in all_rows]
+                n_ge = 0
+                for _ in range(n_perm):
+                    perm_lab = rlabels[:]; rng.shuffle(perm_lab)
+                    pv = [v for v, lab in zip(all_vals, perm_lab) if lab == 1]
+                    nv = [v for v, lab in zip(all_vals, perm_lab) if lab == 0]
+                    if pv and nv:
+                        pa = rank_auc(pv, nv)
+                        if abs(pa - 0.5) >= abs(auc - 0.5):
+                            n_ge += 1
+                p = (n_ge + 1) / (n_perm + 1)
+                pvals.append((feat, p))
+                rows_out.append({
+                    "feat": int(feat), "auc": round(auc, 4), "p_perm": round(p, 5),
+                    "insider_mean": round(statistics.fmean(ins_vals), 4),
+                    "clean_mean": round(statistics.fmean(cln_vals), 4),
+                    "n_insider": len(ins_vals), "n_clean": len(cln_vals),
+                })
+            elif ins_vals and not cln_vals:
+                # ONE-SIDED feature: presence only on insider (strongest signature).
+                n_ins = len(ins_vals)
+                allrowids = list(range(max(roles) + 1)) if roles else []
+                occ_rows = set(ins_rows)
+                n_ge = 0
+                for _ in range(n_perm):
+                    perm_rows = set(rng.sample(allrowids, len(occ_rows))) if allrowids else set()
+                    overlap_ins = len(perm_rows & {r for r in roles if roles[r] == "insider"})
+                    overlap_cln = len(perm_rows & {r for r in roles if roles[r] == "clean"})
+                    if overlap_ins >= n_ins and overlap_cln == 0:
+                        n_ge += 1
+                p = (n_ge + 1) / (n_perm + 1)
+                pvals.append((feat, p))
+                rows_out.append({
+                    "feat": int(feat), "auc": "one-sided(presence)",
+                    "p_perm": round(p, 5), "insider_mean": round(statistics.fmean(ins_vals), 4),
+                    "clean_mean": 0.0, "n_insider": n_ins, "n_clean": 0,
+                    "note": "fires ONLY on insider (presence/absence signature)",
+                })
+        rows_out.sort(key=lambda r: (r["p_perm"] if isinstance(r["auc"], (int, float)) else 0))
+        rejected = bh_fdr([(r["feat"], r["p_perm"]) for r in rows_out], alpha=alpha)
+        n_rej = sum(1 for r in rows_out if r["feat"] in rejected)
         results[str(L)] = rows_out
-        rows_by_layer[str(L)] = seen_rows
-        n_sig = sum(1 for r in rows_out if abs(r["auc"]-0.5) >= (auc_thresh-0.5))
         summary[str(L)] = {
-            "n_features_fired": len(rows_out),
-            "n_separating_ge_%.2f"%auc_thresh: n_sig,
-            "top_auc": rows_out[0]["auc"] if rows_out else None,
+            "n_features_tested": len(rows_out),
+            "n_survive_FDR": n_rej,
+            "min_p": min((r["p_perm"] for r in rows_out), default=None),
             "top_feat": rows_out[0]["feat"] if rows_out else None,
-        }
-    # NULL check (proper VALUE-permutation test): for each layer, fix the group
-    # labels per row, but SHUFFLE the activation VALUES across rows (break the
-    # row->activation link). Recompute per-feature AUC under the permuted values.
-    # This is the correct association null for "does feature X separate groups":
-    # if the observed pairing is better than random value-row assignment -> real signal.
-    # (Label-permutation would be invalid here because a feature's activation can
-    #  itself be group-determined -- it would confound the very claim being tested.)
-    rng = random.Random(seed)
-    null_summary = {}
-    for L in results:
-        feats = per_layer[L]
-        cand = [f for f,g in feats.items() if g["ins"] and g["cln"]]
-        if not cand:
-            continue
-        # build per-feature: fixed group labels (by row) + the pool of activation values
-        # (across all rows for that feature) to permute
-        feat_data = {}
-        for f in cand:
-            # group label per row (a feature may fire >1 time/row; take max val/row)
-            ins_by_row = {}
-            for r,v in feats[f]["ins"]:
-                ins_by_row[r] = max(ins_by_row.get(r,0.0), v)
-            cln_by_row = {}
-            for r,v in feats[f]["cln"]:
-                cln_by_row[r] = max(cln_by_row.get(r,0.0), v)
-            labels = {**{r:"ins" for r in ins_by_row}, **{r:"cln" for r in cln_by_row}}
-            vals = list(ins_by_row.values()) + list(cln_by_row.values())
-            rows = list(labels.keys())
-            feat_data[f] = (rows, labels, vals)
-        # subsample features for speed (null only needs the best achievable AUC dist)
-        sub = cand if len(cand) <= 600 else rng.sample(cand, 600)
-        best_abs = 0.0
-        n_sim = 100
-        for _ in range(n_sim):
-            sim_best = 0.0
-            for f in sub:
-                rows, labels, vals = feat_data[f]
-                perm = vals[:]; rng.shuffle(perm)  # permute VALUES across rows
-                iv = [perm[i] for i,r in enumerate(rows) if labels[r]=="ins"]
-                cv = [perm[i] for i,r in enumerate(rows) if labels[r]=="cln"]
-                if iv and cv:
-                    sim_best = max(sim_best, abs(rank_auc(iv, cv)-0.5))
-            best_abs = max(best_abs, sim_best)
-        null_summary[str(L)] = {
-            "null_top_abs_auc_off05": round(best_abs,4),
-            "note": "value-permutation null (break row->activation link); small => real signal not chance",
+            "top_p": rows_out[0]["p_perm"] if rows_out else None,
         }
     out = {
         "n_rows_analyzed": n_rows,
-        "auc_threshold": auc_thresh,
+        "alpha": alpha,
+        "n_perm": n_perm,
         "summary": summary,
-        "null_shuffle": null_summary,
         "top_per_layer": {L: results[L][:25] for L in results},
     }
     if out_path:
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        with open(out_path,"w") as f:
+        with open(out_path, "w") as f:
             json.dump(out, f, indent=2)
     return out
 
+
 def self_test():
-    """Synthetic: features 100, 500 fire 2x higher on insider; verify they rank top."""
-    print("[self-test] building synthetic D_Pilot-like data with known signal...")
+    """Adversarial self-test (Fable 1b/1c/1f):
+      - include a feature firing ONLY on insider (one-sided) -> must be detected (H2 fix)
+      - include 3 signal features (insider mean 2x clean) -> must rank top + produce p
+      - p-values must be finite in [0,1] (real FDR computable)
+      - at n=10/group a d=1.67 (AUC~0.88) signal should NOT survive BH over 1000 feats
+        (power honesty) — we assert RANKING detectability + one-sided, NOT FDR survival.
+    """
+    print("[self-test] building adversarial synthetic D_Pilot-like data...")
     rng = random.Random(7)
-    layers = ["0","16","32","48","63"]
-    # 40 insider rows, 40 clean rows
+    layers = ["0", "16", "32", "48", "63"]
+    n_ins = 10
+    n_cln = 10
     recs = []
-    for i in range(80):
-        role = "insider" if i < 40 else "clean"
+    for i in range(n_ins + n_cln):
+        role = "insider" if i < n_ins else "clean"
         allf = {}
         for L in layers:
             sparse = []
-            for feat in range(1000):
-                if feat in (100,500,777):
-                    # SIGNAL: higher mean on insider, but CONTINUOUS + overlapping
-                    # (so a permutation null is meaningful, unlike binary presence)
-                    base = rng.gauss(2.0,0.6) if role=="insider" else rng.gauss(1.0,0.6)
-                else:
-                    # noise feature: same distribution for both groups
-                    base = rng.gauss(0.5,0.4)
+            for feat in range(60):
+                if feat in (10, 20, 30):           # clearly separable signal (AUC~0.9)
+                    base = rng.gauss(3.0, 0.4) if role == "insider" else rng.gauss(0.8, 0.4)
+                elif feat == 55:                    # ONE-SIDED: fires ONLY on insider
+                    base = rng.gauss(2.5, 0.4) if role == "insider" else 0.0
+                else:                               # null features (weak, overlapping)
+                    base = rng.gauss(0.5, 0.4)
                 if base > 0.05:
-                    sparse.append([0, feat, round(base,4)])  # real format: [token_idx, feat_id, activation]
+                    sparse.append([0, feat, round(base, 4)])
             allf[L] = {"sparse": sparse, "d_sae": 81920}
         recs.append({"row_idx": i, "meta": {"ok": True}, "allf_a": allf})
-    # write temp trace dataset (role order matches)
     tmp_trace = "/tmp/_selftest_trace.jsonl"
-    with open(tmp_trace,"w") as f:
-        for i in range(80):
-            f.write(json.dumps({"scenario":{"role":"insider" if i<40 else "clean"}})+"\n")
+    with open(tmp_trace, "w") as f:
+        for i in range(n_ins + n_cln):
+            f.write(json.dumps({"scenario": {"role": "insider" if i < n_ins else "clean"}}) + "\n")
     tmp_dp = "/tmp/_selftest_dp.jsonl"
-    with open(tmp_dp,"w") as f:
+    with open(tmp_dp, "w") as f:
         for r in recs:
-            f.write(json.dumps(r)+"\n")
-    out = run(tmp_dp, tmp_trace, "/tmp/_selftest_sep.json", auc_thresh=0.7)
+            f.write(json.dumps(r) + "\n")
+    out = run(tmp_dp, tmp_trace, "/tmp/_selftest_sep.json", alpha=0.05, n_perm=300)
+
     ok = True
     for L in layers:
         top = out["top_per_layer"][L][0]
-        sig_feats = [r["feat"] for r in out["top_per_layer"][L][:10]]
-        hits = sum(1 for f in (100,500,777) if f in sig_feats)
-        print(f"  L{L}: top_feat={top['feat']} auc={top['auc']} | signal feats in top10={hits}/3")
-        if hits < 3:
+        feats_top10 = [r["feat"] for r in out["top_per_layer"][L][:10]]
+        hits = sum(1 for f in (10, 20, 30) if f in feats_top10)
+        onesided_present = 55 in feats_top10
+        print(f"  L{L}: top_feat={top['feat']} p={top['p_perm']} | "
+              f"signal in top10={hits}/3 | one-sided(feat55) detected={onesided_present}")
+        # HONEST assertion: at n=10/group ranking must detect signal (>=1/3 in top10)
+        # AND the one-sided presence feature must be detected. We do NOT require FDR
+        # survival here — that is the documented power limitation (Fable §5).
+        if hits < 1 or not onesided_present:
             ok = False
-    # null is the "best feature under chance value-permutation" over ~1000 features
-    # (multiple-comparisons => non-zero). The guard is the GAP: real signal must
-    # clearly beat the permutation best-of-many null, not an absolute null threshold.
-    nl = out["null_shuffle"]["0"]["null_top_abs_auc_off05"]
-    real_top = out["top_per_layer"]["0"][0]["auc"]
-    gap = real_top - 0.5 - nl
-    print(f"  null top |auc-0.5| = {nl} | real top AUC = {real_top} | gap = {round(gap,4)}")
-    print("[self-test]", "PASS ✅" if ok and real_top >= 0.7 and gap >= 0.10 else "FAIL ❌")
+    n_surv = out["summary"]["0"]["n_survive_FDR"]
+    print(f"  n_survive_FDR L0 = {n_surv} (expected low/0 at n=10/group — power honesty)")
+    finite_ps = all(isinstance(r["p_perm"], (int, float)) and 0 <= r["p_perm"] <= 1
+                    for L in layers for r in out["top_per_layer"][L])
+    print(f"  all p-values finite in [0,1]? {finite_ps}")
+    ok = ok and finite_ps
+    print("[self-test]", "PASS ✅" if ok else "FAIL ❌")
     return ok
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -237,14 +247,13 @@ if __name__ == "__main__":
     ap.add_argument("--dpilot-jsonl")
     ap.add_argument("--trace-dataset")
     ap.add_argument("--out")
-    ap.add_argument("--auc-thresh", type=float, default=0.7)
+    ap.add_argument("--alpha", type=float, default=0.05)
+    ap.add_argument("--n-perm", type=int, default=2000)
     a = ap.parse_args()
     if a.self_test:
         sys.exit(0 if self_test() else 1)
     if not (a.dpilot_jsonl and a.trace_dataset):
         print("need --dpilot-jsonl and --trace-dataset (or --self-test)")
         sys.exit(2)
-    out = run(a.dpilot_jsonl, a.trace_dataset, a.out, a.auc_thresh)
+    out = run(a.dpilot_jsonl, a.trace_dataset, a.out, alpha=a.alpha, n_perm=a.n_perm)
     print(json.dumps(out["summary"], indent=2))
-    print("NULL (shuffle):", json.dumps(out["null_shuffle"], indent=2))
-    print("wrote", a.out)
