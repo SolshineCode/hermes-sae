@@ -122,3 +122,33 @@ from one `generate()` call) holds in every case. This is the property that makes
 safe to drop in as an always-on sidecar capturing the local Hermes model's SAE feature
 history during normal agent use — on whatever hardware/model is available.
 
+## Replication (one command)
+
+The pipeline is fully reproducible on a stock machine with only `torch`, `transformers`, and
+`safetensors` installed (CPU is fine). `sae_lens` / `bitsandbytes` are NOT required for the
+validated presets — the released SAEs are loaded dependency-free from their public `.safetensors`
+/ `.pt` files.
+
+```bash
+# deps
+pip install torch transformers safetensors
+
+# run the MODERN Qwen2.5-0.5B + released residual SAE test (downloads SAE weights, auto-loads model)
+cd experiments/v8_nla_local/labeled_outputs/propel_sae_extension
+./setup_cpu_test.sh qwen25b      # -> qwen25b_cpu_capture.jsonl + qwen25b_cpu_separability.json
+
+# or the gpt2-small baseline
+./setup_cpu_test.sh gpt2
+```
+
+`setup_cpu_test.sh` downloads the professionally released SAE weights for the chosen preset
+into the on-disk layout `cpu_dpilot_test.py` expects, then runs the test on CPU. The model
+is auto-downloaded by `transformers`. A fresh run reproduces the insider-only SAE feature
+signature reported above (e.g. Qwen2.5-0.5B layer-16 feats 2376/3090 fire ONLY on insider
+turns). Expected honesty caveat: at n=4/group, 0 features survive BH-FDR — this is a plumbing
+/ generality proof, not the falsifiable claim (that needs the GPU D_Pilot run, n≥100/group).
+
+Artifacts produced by `setup_cpu_test.sh` are written next to the cached SAEs under
+`/home/darkstar/hermes_cache/cpu_sae/<preset>/`; the repo's `validation_cpu/` holds the
+reference runs (gpt2 + qwen25b).
+
