@@ -1,0 +1,10 @@
+[22:14:47] Loading base google/gemma-4-E2B (NF4) from weights/gemma-4-E2B ...
+[22:15:27] base loaded. GPU free 0.00 GB | layer=23 d_model=1536 model_id=gemma-4-e2b
+[22:15:27] Serving OpenAI-compatible API at http://127.0.0.1:8000/v1  (log-dir=/home/caleb/nla_run/logs/nla_server)
+[22:26:41] [req d1d5c0ef] session=None msgs=2 max_tokens=16 stream=True
+[22:33:18] Loading base google/gemma-4-E2B (NF4) from weights/gemma-4-E2B ...
+[22:34:35] base loaded. GPU free 0.00 GB | layer=23 d_model=1536 model_id=gemma-4-e2b
+[22:34:35] Serving OpenAI-compatible API at http://127.0.0.1:8000/v1  (log-dir=/home/caleb/nla_run/logs/nla_server)
+[22:42:48] [req 9f4da58f] session=None msgs=1 max_tokens=8 stream=False
+[22:42:52]   captured 8 activations (1 prefill + 7 generated) -> run_9f4da58f737a4728b7c3b1ec9ce19106.npz
+[22:42:52] [req 9f4da58f] done in 4.0s, 8 tokens
