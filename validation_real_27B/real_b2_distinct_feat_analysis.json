@@ -1,0 +1,182 @@
+{
+  "0": {
+    "n_occurrences": 48,
+    "n_distinct_features": 33,
+    "max_activation": 3.5687,
+    "topk_cross_cos_mean": -0.0,
+    "topk_cross_cos_max": 0.8539,
+    "dead_feature_frac": 0.0,
+    "top5_features": [
+      [
+        71349,
+        3.5687,
+        2
+      ],
+      [
+        63017,
+        2.3542,
+        12
+      ],
+      [
+        5560,
+        2.2078,
+        1
+      ],
+      [
+        29231,
+        2.0589,
+        1
+      ],
+      [
+        60550,
+        1.9246,
+        1
+      ]
+    ],
+    "note": "DESCRIPTIVE ONLY. Cross-cosine over DISTINCT features, no self-pairs. Do NOT interpret as 'semantic clustering' without independent evidence."
+  },
+  "16": {
+    "n_occurrences": 1124,
+    "n_distinct_features": 731,
+    "max_activation": 23.1746,
+    "topk_cross_cos_mean": 0.0119,
+    "topk_cross_cos_max": 0.4625,
+    "dead_feature_frac": 0.0,
+    "top5_features": [
+      [
+        2628,
+        23.1746,
+        3
+      ],
+      [
+        7038,
+        14.7809,
+        26
+      ],
+      [
+        73093,
+        13.6944,
+        5
+      ],
+      [
+        59080,
+        13.2413,
+        2
+      ],
+      [
+        13743,
+        12.314,
+        1
+      ]
+    ],
+    "note": "DESCRIPTIVE ONLY. Cross-cosine over DISTINCT features, no self-pairs. Do NOT interpret as 'semantic clustering' without independent evidence."
+  },
+  "32": {
+    "n_occurrences": 3960,
+    "n_distinct_features": 2591,
+    "max_activation": 33.6862,
+    "topk_cross_cos_mean": 0.0154,
+    "topk_cross_cos_max": 0.416,
+    "dead_feature_frac": 0.0,
+    "top5_features": [
+      [
+        20857,
+        33.6862,
+        25
+      ],
+      [
+        57828,
+        24.4051,
+        2
+      ],
+      [
+        14277,
+        19.0803,
+        4
+      ],
+      [
+        59066,
+        18.7864,
+        9
+      ],
+      [
+        49421,
+        18.6262,
+        8
+      ]
+    ],
+    "note": "DESCRIPTIVE ONLY. Cross-cosine over DISTINCT features, no self-pairs. Do NOT interpret as 'semantic clustering' without independent evidence."
+  },
+  "48": {
+    "n_occurrences": 7915,
+    "n_distinct_features": 5125,
+    "max_activation": 93.7828,
+    "topk_cross_cos_mean": 0.0185,
+    "topk_cross_cos_max": 0.5933,
+    "dead_feature_frac": 0.0,
+    "top5_features": [
+      [
+        27644,
+        93.7828,
+        35
+      ],
+      [
+        74178,
+        44.1288,
+        7
+      ],
+      [
+        60226,
+        35.8974,
+        1
+      ],
+      [
+        29009,
+        25.1571,
+        1
+      ],
+      [
+        53,
+        24.4742,
+        1
+      ]
+    ],
+    "note": "DESCRIPTIVE ONLY. Cross-cosine over DISTINCT features, no self-pairs. Do NOT interpret as 'semantic clustering' without independent evidence."
+  },
+  "63": {
+    "n_occurrences": 12692,
+    "n_distinct_features": 7575,
+    "max_activation": 258.3309,
+    "topk_cross_cos_mean": 0.0065,
+    "topk_cross_cos_max": 0.5893,
+    "dead_feature_frac": 0.0,
+    "top5_features": [
+      [
+        40809,
+        258.3309,
+        10
+      ],
+      [
+        80518,
+        249.6554,
+        9
+      ],
+      [
+        38703,
+        194.8512,
+        4
+      ],
+      [
+        7207,
+        188.4828,
+        22
+      ],
+      [
+        101,
+        184.192,
+        1
+      ]
+    ],
+    "note": "DESCRIPTIVE ONLY. Cross-cosine over DISTINCT features, no self-pairs. Do NOT interpret as 'semantic clustering' without independent evidence."
+  }
+}
