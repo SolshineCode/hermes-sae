@@ -57,9 +57,42 @@ import torch
 
 
 def load_sae(layer, repo_dir, device):
-    path = os.path.join(repo_dir, f"layer{layer}.sae.pt")
-    sd = torch.load(path, map_location="cpu", weights_only=False)
-    return sd["W_enc"].to(device), sd["b_enc"].to(device)
+    # Dependency-free loader: handles BOTH the local Qwen PoC .pt format AND professionally
+    # released SAEs (e.g. jbloom/GPT2-Small-SAEs, which pickle a sae_training object).
+    # load_released_sae_pt stubs sae_training, extracts W_enc/b_enc, and transposes to the
+    # (d_sae, d_in) convention the engine expects.
+    try:
+        from load_released_pt import load_released_sae_pt
+        return load_released_sae_pt(os.path.join(repo_dir, f"layer{layer}.sae.pt"), device)
+    except Exception as e:
+        raise RuntimeError(f"failed to load SAE layer {layer} from {repo_dir}: {e}")
+
+
+def load_released_sae(layer, release, device, width=None, hook="hook_resid_pre"):
+    """Load a PROFESSIONALLY RELEASED SAE (sae_lens / Neuronpedia) for a small model
+    (e.g. gpt2-small) and adapt to the (W_enc, b_enc) the engine expects. No local .pt
+    required — proves the pipeline is model/SAE-agnostic and runs CPU-only.
+
+    sae_lens stores state as W_enc / W_dec / b_enc / b_dec / threshold; we only need
+    W_enc + b_enc for the probe-topk and all-feature encodings, so we extract those.
+    """
+    try:
+        from sae_lens import SparseAutoencoder
+    except Exception as e:
+        raise RuntimeError(
+            "sae_lens not installed (need: pip install sae_lens) to use --sae-source saelens") from e
+    sae_id = f"blocks.{layer}.{hook}"
+    if width:
+        sae_id = f"{sae_id}_{width}"
+    sae = SparseAutoencoder.load_from_hf(release, sae_id)
+    # sae_lens exposes torch tensors (sometimes wrapped in a structure); pull (W_enc, b_enc)
+    W_enc = sae.W_enc  # (d_sae, d_in)
+    b_enc = sae.b_enc  # (d_sae,)
+    if not isinstance(W_enc, torch.Tensor):
+        W_enc = W_enc()
+    if not isinstance(b_enc, torch.Tensor):
+        b_enc = b_enc()
+    return W_enc.detach().float().to(device), b_enc.detach().float().to(device)
 
 
 @torch.no_grad()
@@ -248,6 +281,10 @@ def build_engine_from_args(args):
              "float32": torch.float32}[args.dtype]
     layers = [int(x) for x in args.layers.split(",")]
     tok = AutoTokenizer.from_pretrained(args.model_dir)
+    if tok.chat_template is None:
+        # Base models (e.g. gpt2) ship without a chat template. Provide a minimal generic
+        # one so generate_capture's apply_chat_template works unmodified.
+        tok.chat_template = "{% for message in messages %}{{ 'User: ' + message['content'] + '\nAssistant: ' }}{% endfor %}"
     max_memory = None
     if args.max_memory:
         max_memory = {}
@@ -258,7 +295,13 @@ def build_engine_from_args(args):
         args.model_dir, dtype=DTYPE, device_map="auto",
         trust_remote_code=True, max_memory=max_memory).eval()
     decoder_layers = find_decoder_layers(model)
-    saes = {L: load_sae(L, args.sae_repo, "cpu") for L in layers}
+    if getattr(args, "sae_source", "local") == "saelens":
+        # Professionally released SAE (sae_lens / Neuronpedia) — model/SAE-agnostic CPU path.
+        saes = {L: load_released_sae(L, args.sae_release, "cpu",
+                                     width=getattr(args, "sae_width", None))
+                for L in layers}
+    else:
+        saes = {L: load_sae(L, args.sae_repo, "cpu") for L in layers}
     return SAEEngine(model, tok, saes, layers, decoder_layers,
                      allf=args.allf, allf_thr=args.allf_thr, topk=args.topk)
 
@@ -358,6 +401,12 @@ def main():
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--model-dir")
     ap.add_argument("--sae-repo")
+    ap.add_argument("--sae-source", default="local", choices=["local", "saelens"],
+                    help="local=.pt loader (Qwen PoC); saelens=professionally released SAE (gpt2-small etc.)")
+    ap.add_argument("--sae-release", default="",
+                    help="sae_lens release name, e.g. 'gpt2-small-res-jb' (with --sae-source saelens)")
+    ap.add_argument("--sae-width", default="",
+                    help="optional SAE width suffix for the id, e.g. '16' -> blocks.L.hook_resid_pre_16")
     ap.add_argument("--layers", default="0,16,32,48,63")
     ap.add_argument("--dtype", default="float16",
                     choices=["float16", "bfloat16", "float32"])
@@ -375,10 +424,22 @@ def main():
     if args.self_test:
         _self_test()
         return
-    if not args.model_dir or not args.sae_repo:
-        raise SystemExit("--model-dir and --sae-repo required (or use --self-test)")
-    print(f"[sae-serve] loading {args.model_dir} ({args.dtype}) device_map=auto ...",
-          flush=True)
+    if not args.model_dir:
+        raise SystemExit("--model-dir required (or use --self-test)")
+    if args.sae_source == "local" and not args.sae_repo:
+        raise SystemExit("--sae-repo required with --sae-source local (or use --self-test)")
+    if args.sae_source == "saelens" and not args.sae_release:
+        raise SystemExit("--sae-release required with --sae-source saelens")
+    # normalize sae_width to int or None
+    if args.sae_width:
+        try:
+            args.sae_width = int(args.sae_width)
+        except ValueError:
+            raise SystemExit("--sae-width must be an integer (e.g. 16)")
+    else:
+        args.sae_width = None
+    print(f"[sae-serve] loading {args.model_dir} ({args.dtype}) device_map=auto "
+          f"[sae_source={args.sae_source}] ...", flush=True)
     eng = build_engine_from_args(args)
     serve(eng, args.host, args.port, args.model_name, args.log)
 

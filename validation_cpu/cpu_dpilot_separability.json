@@ -1,0 +1,527 @@
+{
+  "n_rows_analyzed": 8,
+  "alpha": 0.05,
+  "n_perm": 200,
+  "summary": {
+    "7": {
+      "n_features_tested": 15320,
+      "n_survive_FDR": 0,
+      "min_p": 0.00498,
+      "top_feat": 3018,
+      "top_p": 0.02488
+    },
+    "11": {
+      "n_features_tested": 18163,
+      "n_survive_FDR": 0,
+      "min_p": 0.00995,
+      "top_feat": 5258,
+      "top_p": 0.06468
+    }
+  },
+  "top_per_layer": {
+    "7": [
+      {
+        "feat": 3018,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.02488,
+        "insider_mean": 1.5305,
+        "clean_mean": 0.0,
+        "n_insider": 4,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 4407,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.10945,
+        "insider_mean": 1.3193,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 11215,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.21393,
+        "insider_mean": 1.495,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 14863,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.19403,
+        "insider_mean": 1.6116,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 15621,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.21393,
+        "insider_mean": 1.3838,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 17154,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.20398,
+        "insider_mean": 1.4708,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 2424,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.18408,
+        "insider_mean": 2.6986,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 11170,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.08955,
+        "insider_mean": 2.643,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 13148,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.47761,
+        "insider_mean": 8.0883,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 15119,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.27861,
+        "insider_mean": 2.4982,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 15645,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.199,
+        "insider_mean": 3.7936,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 16911,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.49254,
+        "insider_mean": 1.4943,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 17155,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.45274,
+        "insider_mean": 2.9506,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 19431,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.50746,
+        "insider_mean": 2.4839,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 21345,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.06468,
+        "insider_mean": 2.0329,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 22049,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.47761,
+        "insider_mean": 1.642,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 22210,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.0796,
+        "insider_mean": 2.0941,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 23910,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.46269,
+        "insider_mean": 5.9276,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 24425,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.48259,
+        "insider_mean": 1.1005,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 4809,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.23881,
+        "insider_mean": 2.6771,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 5463,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.25373,
+        "insider_mean": 3.9024,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 6556,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.53234,
+        "insider_mean": 1.4757,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 7016,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.44776,
+        "insider_mean": 8.8859,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 8495,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.22886,
+        "insider_mean": 2.9069,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 8873,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.50746,
+        "insider_mean": 2.6678,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      }
+    ],
+    "11": [
+      {
+        "feat": 5258,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.06468,
+        "insider_mean": 6.8128,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 5633,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.49254,
+        "insider_mean": 3.3949,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 7711,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.22886,
+        "insider_mean": 5.9225,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 9380,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.22886,
+        "insider_mean": 8.2045,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 9412,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.04975,
+        "insider_mean": 6.7353,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 12645,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.20896,
+        "insider_mean": 9.6459,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 15734,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.52239,
+        "insider_mean": 3.9812,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 17497,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.06468,
+        "insider_mean": 5.0438,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 23118,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.06965,
+        "insider_mean": 7.5016,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 2489,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.52239,
+        "insider_mean": 6.7417,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 4041,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.52239,
+        "insider_mean": 2.6547,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 10074,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.21891,
+        "insider_mean": 2.8971,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 20552,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.52736,
+        "insider_mean": 4.5371,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 10766,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.0796,
+        "insider_mean": 3.2427,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 11695,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.23881,
+        "insider_mean": 6.6418,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 18576,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.23881,
+        "insider_mean": 6.5778,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 2937,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.26368,
+        "insider_mean": 13.0939,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 287,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.199,
+        "insider_mean": 6.6425,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 437,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.08955,
+        "insider_mean": 3.2843,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 1044,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.07463,
+        "insider_mean": 4.8432,
+        "clean_mean": 0.0,
+        "n_insider": 3,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 5562,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.19403,
+        "insider_mean": 5.1724,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 7194,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.21891,
+        "insider_mean": 5.5156,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 11411,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.25871,
+        "insider_mean": 4.0945,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 12509,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.25871,
+        "insider_mean": 3.9808,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 12591,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.20896,
+        "insider_mean": 3.9719,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      }
+    ]
+  }
+}
