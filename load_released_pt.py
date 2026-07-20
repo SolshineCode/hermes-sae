@@ -83,6 +83,39 @@ def load_released_sae_pt(path, device="cpu"):
     return W_enc.detach().float().to(device), b_enc.detach().float().to(device)
 
 
+def load_released_safetensors_sae(path, device="cpu"):
+    """Load a released SAE stored as safetensors (e.g. EleutherAI's
+    sae-DeepSeek-R1-Distill-Qwen-1.5B-65k: encoder.weight [d_sae, d_in], encoder.bias
+    [d_sae], W_dec [d_sae, d_in], b_dec [d_in]). Standard TopK SAE; matches the engine
+    convention directly (W_enc is already (d_sae, d_in))."""
+    from safetensors.torch import load_file
+    sd = load_file(path)
+    # Accept both 'encoder.weight' (EleutherAI) and 'W_enc' (generic) key names.
+    if "encoder.weight" in sd:
+        W_enc = sd["encoder.weight"]
+        b_enc = sd["encoder.bias"]
+    elif "W_enc" in sd:
+        W_enc = sd["W_enc"]
+        b_enc = sd["b_enc"]
+    else:
+        raise KeyError(f"no encoder weight key in {path}; keys={list(sd.keys())}")
+    if not isinstance(W_enc, torch.Tensor):
+        W_enc = torch.as_tensor(W_enc)
+    if not isinstance(b_enc, torch.Tensor):
+        b_enc = torch.as_tensor(b_enc)
+    if W_enc.shape[0] < W_enc.shape[1]:
+        W_enc = W_enc.T.contiguous()
+    return W_enc.detach().float().to(device), b_enc.detach().float().to(device)
+
+
+def load_released_sae(path, device="cpu"):
+    """Dispatch on file extension: .safetensors -> load_released_safetensors_sae,
+    otherwise -> load_released_sae_pt (Bloom-style pickle)."""
+    if str(path).endswith(".safetensors"):
+        return load_released_safetensors_sae(path, device)
+    return load_released_sae_pt(path, device)
+
+
 if __name__ == "__main__":
     import os
     p = sys.argv[1] if len(sys.argv) > 1 else "/home/darkstar/hermes_cache/cpu_sae/gpt2-small-sae/layer7.sae.pt"

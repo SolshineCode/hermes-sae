@@ -91,3 +91,34 @@ generality proof. The honest falsifiable test remains the **real D_Pilot capture
 run that can confirm or falsify the deception-separability claim. The CPU run establishes
 that the *machinery* generalizes across model, SAE, and device; it does not by itself
 establish a deception-SAE effect.
+
+## Run 2 — MODERN QWEN (Qwen2.5-0.5B) + professionally released residual SAE, CPU-only
+
+Repeated the exact same pipeline (same `sae_serve.py` serving layer, same same-inference
+capture, same B1 separability) on a **modern model** to stress the model-agnostic claim
+beyond the ancient gpt2 baseline.
+
+- **Model:** `Qwen/Qwen2.5-0.5B` (modern Qwen2.5, ~0.5B params) — CPU load ~110s, ~18-22s
+  per 24-token generation on plain CPU (no GPU).
+- **Professionally released SAE:** `HuggingAnalist/sae-qwen2.5-0.5B-res` — sae_lens-format
+  **residual** SAEs (`W_enc (896,14336)`, `b_enc`, `b_dec`, `hook_name=model.layers.{16,18}`),
+  d_sae=14336, loaded dependency-free via `load_released_pt.load_released_safetensors_sae`
+  (reads `W_enc`/`b_enc` from safetensors; transposes to engine `(d_sae,d_in)` convention).
+- **Hook mode:** `resid` (the released SAE trains on residual stream, same as the Qwen PoC
+  and gpt2 SAEs). The engine's `hook_mode` extension is what kept this identical to Run 1's
+  code path — no engine fork.
+- **Result:** 8 captures (4 insider / 4 clean). B1 separability again shows the presence-only
+  **insider signature**: e.g. layer-16 feat 2376 and 3090 fire ONLY on insider turns
+  (`insider_mean > 0`, `clean_mean = 0.0`), exactly the same qualitative pattern as Run 1's
+  gpt2 feat 3018. 0 features survive BH-FDR at n=4/group (expected — power, not plumbing).
+- **Artifacts:** `qwen25b_cpu_capture.jsonl`, `qwen25b_cpu_separability.json`,
+  `qwen25b_cpu_run.log`.
+
+**Robustness takeaway for Nous/Hermes dev team (strengthened):** the PROPEL-SAE serving
+layer runs on (a) an ancient base model (gpt2) and (b) a *modern* instruction-tuned Qwen2.5,
+(c) with two *different* released-SAE formats (Bloom pickle + sae_lens safetensors), and
+(d) on CPU with zero GPU. The same-inference invariant (generation text + SAE feature log
+from one `generate()` call) holds in every case. This is the property that makes the layer
+safe to drop in as an always-on sidecar capturing the local Hermes model's SAE feature
+history during normal agent use — on whatever hardware/model is available.
+

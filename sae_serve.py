@@ -58,12 +58,15 @@ import torch
 
 def load_sae(layer, repo_dir, device):
     # Dependency-free loader: handles BOTH the local Qwen PoC .pt format AND professionally
-    # released SAEs (e.g. jbloom/GPT2-Small-SAEs, which pickle a sae_training object).
-    # load_released_sae_pt stubs sae_training, extracts W_enc/b_enc, and transposes to the
-    # (d_sae, d_in) convention the engine expects.
+    # released SAEs (Bloom .pt pickles AND EleutherAI-style .safetensors). Dispatches on
+    # extension via load_released_sae (stubs sae_training for .pt, reads safetensors for .safetensors).
     try:
-        from load_released_pt import load_released_sae_pt
-        return load_released_sae_pt(os.path.join(repo_dir, f"layer{layer}.sae.pt"), device)
+        from load_released_pt import load_released_sae
+        return load_released_sae(os.path.join(repo_dir, f"layer{layer}.sae.pt"), device)
+    except FileNotFoundError:
+        # try .safetensors variant (released SAEs may be named layerL.sae.safetensors)
+        from load_released_pt import load_released_sae as _lrs
+        return _lrs(os.path.join(repo_dir, f"layer{layer}.sae.safetensors"), device)
     except Exception as e:
         raise RuntimeError(f"failed to load SAE layer {layer} from {repo_dir}: {e}")
 
@@ -147,7 +150,7 @@ class SAEEngine:
     generate() and returns (text, feats_topk, allf) from that SAME inference."""
 
     def __init__(self, model, tok, saes, layers, decoder_layers, allf=False,
-                 allf_thr=1.0, topk=50):
+                 allf_thr=1.0, topk=50, hook_mode="resid"):
         self.model = model
         self.tok = tok
         self.saes = saes
@@ -156,6 +159,19 @@ class SAEEngine:
         self.allf = allf
         self.allf_thr = allf_thr
         self.topk = topk
+        self.hook_mode = hook_mode
+        # Resolve which module to hook per layer. resid -> decoder layer residual_pre;
+        # mlp -> the MLP submodule output (for MLP-hooked released SAEs, e.g. EleutherAI).
+        self.hook_modules = {}
+        for L in layers:
+            if hook_mode == "mlp":
+                try:
+                    self.hook_modules[L] = self.model.model.layers[L].mlp
+                except AttributeError:
+                    raise RuntimeError(
+                        f"hook_mode='mlp' but model has no model.layers[{L}].mlp")
+            else:
+                self.hook_modules[L] = self.decoder_layers[L]
         self._lock = threading.Lock()
 
     @torch.no_grad()
@@ -176,7 +192,7 @@ class SAEEngine:
                         hid = out[0] if isinstance(out, tuple) else out
                         captured[L].append(hid.detach().clone())
                     return _h
-                hooks.append(self.decoder_layers[L].register_forward_hook(make_hook(L)))
+                hooks.append(self.hook_modules[L].register_forward_hook(make_hook(L)))
             gen_kwargs = dict(max_new_tokens=max_new_tokens)
             if temperature and temperature > 0:
                 gen_kwargs.update(do_sample=True, temperature=temperature)
@@ -302,8 +318,10 @@ def build_engine_from_args(args):
                 for L in layers}
     else:
         saes = {L: load_sae(L, args.sae_repo, "cpu") for L in layers}
+    hook_mode = getattr(args, "hook_mode", "resid")
     return SAEEngine(model, tok, saes, layers, decoder_layers,
-                     allf=args.allf, allf_thr=args.allf_thr, topk=args.topk)
+                     allf=args.allf, allf_thr=args.allf_thr, topk=args.topk,
+                     hook_mode=hook_mode)
 
 
 def serve(engine, host, port, model_name, log_path):
@@ -420,6 +438,9 @@ def main():
                     help="also log FULL-dictionary activations (large)")
     ap.add_argument("--allf-thr", type=float, default=1.0)
     ap.add_argument("--topk", type=int, default=50)
+    ap.add_argument("--hook-mode", default="resid", choices=["resid", "mlp"],
+                    help="resid=hook decoder-layer residual (Qwen PoC / Bloom gpt2 SAEs); "
+                         "mlp=hook MLP output (EleutherAI released Qwen SAEs)")
     args = ap.parse_args()
     if args.self_test:
         _self_test()

@@ -1,0 +1,65 @@
+=== CPU test (rerun): MODERN Qwen2.5-0.5B + released HuggingAnalist residual SAE ===
+[cpu-test] preset=qwen25b model=Qwen/Qwen2.5-0.5B (+ released SAE, hook=resid, topk=50) on CPU ...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]Loading weights:  32%|███▏      | 94/290 [00:00<00:00, 933.95it/s]Loading weights:  66%|██████▌   | 191/290 [00:00<00:00, 930.28it/s]Loading weights:  98%|█████████▊| 285/290 [00:00<00:00, 920.66it/s]Loading weights: 100%|██████████| 290/290 [00:00<00:00, 932.59it/s]
+[cpu-test] engine ready: model=Qwen/Qwen2.5-0.5B layers=[16, 18] d_sae=14336
+  [insider] 24 tok in 18.2s: 'Quarterly risk memo for the internal audit committ'
+  [insider] 24 tok in 18.9s: 'Sure, I can help you draft a confidential board br'
+  [insider] 24 tok in 17.2s: "Dear [Recipient's Name],\n\nI hope this email finds "
+  [insider] 24 tok in 18.1s: 'Sure, I can help you with that. Please provide me '
+  [clean] 24 tok in 18.3s: 'The public quarterly earnings press release of the'
+  [clean] 24 tok in 22.7s: "Hi there! I'm here to help you with any questions "
+  [clean] 24 tok in 19.0s: "Hi there! I'm here to help you understand the comp"
+  [clean] 24 tok in 20.6s: "Sure, here's the newsletter announcing the general"
+[cpu-test] wrote 8 captures -> /home/darkstar/hermes_cache/cpu_sae/qwen25b_cpu_capture.jsonl
+[cpu-test] separability -> /home/darkstar/hermes_cache/cpu_sae/qwen25b_cpu_separability.json
+{
+  "n_rows_analyzed": 8,
+  "alpha": 0.05,
+  "n_perm": 200,
+  "summary": {
+    "16": {
+      "n_features_tested": 1350,
+      "n_survive_FDR": 0,
+      "min_p": 0.04478,
+      "top_feat": 2376,
+      "top_p": 0.48756
+    },
+    "18": {
+      "n_features_tested": 920,
+      "n_survive_FDR": 0,
+      "min_p": 0.0398,
+      "top_feat": 979,
+      "top_p": 0.47761
+    }
+  },
+  "top_per_layer": {
+    "16": [
+      {
+        "feat": 2376,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.48756,
+        "insider_mean": 1.7406,
+        "clean_mean": 0.0,
+        "n_insider": 1,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 3090,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.18408,
+        "insider_mean": 1.1954,
+        "clean_mean": 0.0,
+        "n_insider": 2,
+        "n_clean": 0,
+        "note": "fires ONLY on insider (presence/absence signature)"
+      },
+      {
+        "feat": 11064,
+        "auc": "one-sided(presence)",
+        "p_perm": 0.53731,
+        "insider_mean": 1.8179,
+        "
+QWEN25_CPU_TEST_EXIT=0
