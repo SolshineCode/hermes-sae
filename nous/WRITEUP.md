@@ -98,8 +98,9 @@ and documents the JSONL schema as an interface so any OpenAI-compatible
 server that emits it works, not just mine. It's built to run either as a
 standalone plugin in `~/.hermes/plugins/` (that copy lives in
 [`hermes-plugin/sae_trace/`](../hermes-plugin/sae_trace/)) or bundled under
-`plugins/observability/` with a 32-test suite, whichever the team prefers,
-and I'm happy to submit it as a PR, publish it standalone, or both.
+`plugins/observability/` with a 32-test suite. The bundled version is
+submitted as [PR #68543](https://github.com/NousResearch/hermes-agent/pull/68543);
+whichever adoption path the team prefers works for me.
 
 The design principle throughout: Hermes stays untouched. The model side is
 just a serving wrapper, the agent side is just an observer plugin, and the
