@@ -97,6 +97,13 @@ one condition and on zero turns of the other. Full statistics, the bugs found
 along the way, and exactly what this does and does not establish are in the
 [B1 report](../B1_REAL_27B_REPORT_2026_07_20.md).
 
+None of this has to be consumed as tables, either. The repo ships a static
+[dashboard](../dashboard.html) that runs in any browser with nothing behind
+it: load a full-dictionary capture from the serving layer and it renders
+the top features per layer and a token-by-feature activation heatmap across
+all 81,920 dictionary entries. Teaching it to read the plugin's per-session
+traces directly is a natural follow-up.
+
 **3. Anyone can replicate the pipeline on a CPU in one command.** The
 hardware above is what I happened to have, not what's required: the probe
 runs wherever the model runs, from CPU-only up. The same
