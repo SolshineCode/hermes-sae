@@ -20,6 +20,8 @@ activations might diverge from the ones that actually drove the behavior. One
 forward pass, two outputs: the tokens, and a readout of the internals that
 produced them.
 
+![One forward pass, two outputs](figures/f2_architecture.png)
+
 This only works because the weights are local. You can't hook the residual
 stream of an API. The interpretability story and the local-model story are the
 same story, and that is why I'm bringing it to Nous: an agent stack where
