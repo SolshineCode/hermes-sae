@@ -65,6 +65,7 @@ sidecar per request. Point Hermes at it as a custom provider — the recipe is i
 
 | Path | What it is |
 |------|------------|
+| `hermes-plugin/sae_trace/` | Hermes Agent observability plugin: correlates agent turns with SAE feature traces (standalone install; also proposed upstream) |
 | `sae_serve.py` | OpenAI-compatible serving layer with SAE hooks + JSONL sidecar |
 | `probe-demo/` | Minimal standalone probe (one file, one command) |
 | `2026-07-19-agent-integrated-sae-capture/` | Local model *as* the Hermes Agent model, with capture + analysis |

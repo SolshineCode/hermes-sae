@@ -94,9 +94,10 @@ Langfuse plugin. It correlates each agent turn with the feature-trace records
 the SAE-hooked server emits, writes a per-session interpretability sidecar,
 and documents the JSONL schema as an interface so any OpenAI-compatible
 server that emits it works, not just mine. It's built to run either as a
-standalone plugin in `~/.hermes/plugins/` or bundled under
-`plugins/observability/`, whichever the team prefers, and I'm happy to submit
-it as a PR, publish it standalone, or both.
+standalone plugin in `~/.hermes/plugins/` (that copy lives in
+[`hermes-plugin/sae_trace/`](../hermes-plugin/sae_trace/)) or bundled under
+`plugins/observability/` with a 32-test suite, whichever the team prefers,
+and I'm happy to submit it as a PR, publish it standalone, or both.
 
 The design principle throughout: Hermes stays untouched. The model side is
 just a serving wrapper, the agent side is just an observer plugin, and the
