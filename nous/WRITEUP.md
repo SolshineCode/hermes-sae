@@ -97,12 +97,12 @@ one condition and on zero turns of the other. Full statistics, the bugs found
 along the way, and exactly what this does and does not establish are in the
 [B1 report](../B1_REAL_27B_REPORT_2026_07_20.md).
 
-None of this has to be consumed as tables, either. The repo ships a static
-[dashboard](../dashboard.html) that runs in any browser with nothing behind
-it: load a full-dictionary capture from the serving layer and it renders
-the top features per layer and a token-by-feature activation heatmap across
-all 81,920 dictionary entries. Teaching it to read the plugin's per-session
-traces directly is a natural follow-up.
+None of this has to be consumed as tables, either. For research-grade
+captures, the repo ships a static [dashboard](../dashboard.html) that
+renders a full-dictionary capture (top features per layer, a
+token-by-feature activation heatmap across all 81,920 entries) in any
+browser with nothing behind it. And for everyday use, the plugin carries
+its own session dashboard, described below.
 
 **3. Anyone can replicate the pipeline on a CPU in one command.** The
 hardware above is what I happened to have, not what's required: the probe
@@ -127,9 +127,17 @@ and documents the JSONL schema as an interface so any OpenAI-compatible
 server that emits it works, not just mine. It's built to run either as a
 standalone plugin in `~/.hermes/plugins/` (that copy lives in
 [`hermes-plugin/sae_trace/`](../hermes-plugin/sae_trace/)) or bundled under
-`plugins/observability/` with a 32-test suite. The bundled version is
+`plugins/observability/` with a 35-test suite. The bundled version is
 submitted as [PR #68543](https://github.com/NousResearch/hermes-agent/pull/68543);
 whichever adoption path the team prefers works for me.
+
+The plugin also gives Hermes users a watch-your-session view with zero
+install: it ships a single self-contained `dashboard.html` (no server, no
+build step, no network) that renders the session's turns with their match
+confidence, the top SAE features per layer with activation bars, and a
+session-level feature aggregate. Pick the trace file once and the page
+follows it live as the agent works. `/sae dashboard` in any Hermes session
+prints where everything is.
 
 The design principle throughout: Hermes stays untouched. The model side is
 just a serving wrapper, the agent side is just an observer plugin, and the

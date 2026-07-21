@@ -7,7 +7,7 @@ what your local model's internals were doing while it ran the agent.
 
 This is the standalone copy of the plugin (also proposed upstream to
 `NousResearch/hermes-agent` as `plugins/observability/sae_trace`, where it
-ships with a 32-test suite). It is **opt-in** — it only loads when you
+ships with a 35-test suite). It is **opt-in** — it only loads when you
 explicitly enable it. It is a pure read-only observer on the
 `hermes.observer.v1` hooks contract (see
 [`docs/observability/README.md`](https://github.com/NousResearch/hermes-agent/blob/main/docs/observability/README.md)):
@@ -137,6 +137,27 @@ In any CLI or gateway session:
 - `/sae status` — sidecar path, records seen/matched this session,
   unmatched turns, last turn's top features
 - `/sae last` — the most recent turn's correlated feature summary
+- `/sae dashboard` — prints where the session dashboard and your latest
+  trace live
+
+## Session dashboard (zero install)
+
+The plugin ships `dashboard.html`, a single self-contained page that gives
+you a "watch your session" view of the correlated traces. No server, no
+build step, no network: open the file in a browser and load a
+`<session_id>.jsonl` trace with the file picker or by drag-and-drop.
+
+It renders the session's agent turns (newest first, with per-turn match
+confidence), a per-turn detail panel (top SAE features per layer with
+activation bars, `same_inference` provenance, generated-text preview or
+`npz_path` pointer), and a session-level table of the strongest features
+across all turns.
+
+To watch a session as it runs, click **Follow live** and pick the trace
+file once: the page re-reads it every 2 seconds as the plugin appends
+turns. Live follow uses the File System Access API (Chromium-based
+browsers); on other browsers, re-load or re-drop the file to refresh.
+`/sae dashboard` prints the page path and your most recent trace file.
 
 ## Correlation confidence (limitations)
 
