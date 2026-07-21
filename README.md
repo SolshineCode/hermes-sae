@@ -94,8 +94,11 @@ sidecar per request. Point Hermes at it as a custom provider — the recipe is i
 
 Hardware context: the 27B results ran on a used Dell T7610 with 2× Tesla M40
 24GB (< $200 of GPU); the agent-integrated capture ran on a ThinkPad's 4 GB
-GTX 1650 Ti; the replication path needs no GPU at all. This is deliberately a
-consumer/homelab-grade instrument.
+GTX 1650 Ti; the replication path needs no GPU at all. That's what these
+results happened to run on, not a requirement — the capture path runs
+wherever your model runs (CPU-only, one consumer GPU, Apple Silicon, or a
+multi-GPU box), and the plugin side is pure file I/O with no GPU or torch
+dependency. This is deliberately a consumer/homelab-grade instrument.
 
 ## License
 

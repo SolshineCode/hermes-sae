@@ -74,7 +74,9 @@ one condition and on zero turns of the other. Full statistics, the bugs found
 along the way, and exactly what this does and does not establish are in the
 [B1 report](../B1_REAL_27B_REPORT_2026_07_20.md).
 
-**3. Anyone can replicate the pipeline on a CPU in one command.** The same
+**3. Anyone can replicate the pipeline on a CPU in one command.** The
+hardware above is what I happened to have, not what's required: the probe
+runs wherever the model runs, from CPU-only up. The same
 capture path runs on gpt2-small and Qwen2.5-0.5B with publicly released SAEs,
 no GPU: `./setup_cpu_test.sh qwen25b`. The same-inference invariant is
 verified end to end on both the 27B GPU path and the CPU path, including

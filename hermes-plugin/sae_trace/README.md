@@ -14,6 +14,11 @@ explicitly enable it. It is a pure read-only observer on the
 it never modifies requests, responses, or the sidecar file, uses only the
 Python stdlib, and touches only local files (no network).
 
+The plugin has no hardware or ML-framework requirements of its own — it is
+pure file correlation (no `torch`, no GPU). Whatever your model runs on —
+a CPU-only laptop, a single consumer GPU, Apple Silicon, or a multi-GPU
+workstation — the plugin only needs the sidecar JSONL your server writes.
+
 ## How it works
 
 1. You run your local model behind an SAE-instrumented OpenAI-compatible
