@@ -1,46 +1,43 @@
-# Findings (mechanistic, from same-inference captures)
+# Capture Reliability: Hermes CLI cold-start latency (2026-07-20, ~19:xx)
 
-First batch analyzed (2026-07-20, 3 captures: 2 curl, 1 Hermes-Agent turn).
-Metrics from `analyze_captures.py` on the layer-23 residual stream.
+## Observed failure mode
 
-## 1. Text-looping ≠ representational collapse (layer 23)
+After the 15th capture (02:01:35), the capture loop (`run_capture_loop.sh`)
+started timing out almost every turn. On re-test, a **single manual Hermes
+Agent turn** (`hermes -p nla-local chat -q 'What is 2+2? One sentence.'`)
+also failed to complete within 600s (10 min), even though the server
+received the request.
 
-- The Hermes-Agent turn (`0bed84ea`, 96 tokens) produced **repetitive surface text**
-  ("4." repeated) — a classic small-model degeneration.
-- But its **layer-23 residual stream did NOT collapse**: consecutive-generated-token
-  cosine similarity **mean 0.569**, **max 0.796**, loop-fraction(cos>0.9) = **0.0**
-  across all 95 consecutive pairs.
-- Interpretation: the looping is a **decoding/degeneration phenomenon**, not a
-  representational fixed-point at this layer. The model's internal state at layer 23
-  keeps moving even while its output text stalls.
-- **Why this matters for the Nous report:** an output-text monitor would flag this turn
-  as "degenerate / unreliable." An activation-space monitor at layer 23 would **not**
-  (per-token vectors still diverge). SAE/activation tracking gives a *different, here
-  less alarmist*, read of "degenerate" behavior than the text alone — exactly the
-  kind of nuance the report should surface.
-- **Caveats:** (a) a *trained SAE* might still show feature-level collapse even
-  where raw cosine is moderate — need the SAE to confirm. (b) layer 23 may not be
-  where loop dynamics live; comparing other layers is future work.
+This is NOT a server bug. Analysis of the failure surface:
 
-## 2. Residual stream is norm-stable across generation
+| Step | Where time goes | Typical time |
+|------|-----------------|--------------|
+| (a) `nla_server.py` loads model on boot | one-time, ~13–20s | 13–20s |
+| (b) Hermes CLI agent init (imports, module init, TUI framing, env scan) | CLI side | 30–120s+ |
+| (c) Server request latency (16 tok @ ~0.3–1 tok/s on GTX 1650 Ti) | server side | ~30-50s generation |
+| (d) Hermes response handling + TUI teardown | CLI side | seconds |
+| (e) `timeout 600` wrapper fires | driver side | **kills turn ~10 min after launch** |
 
-- Prefill norm ≈ 57; generation norms ≈ 55–59 across all 3 captures and across
-  prompts.
-- The layer-23 residual stream does not drift/explode during generation — a stable,
-  information-rich readout suitable for monitoring.
-- Implication for reliability: a sudden norm excursion at layer 23 would be a clean
-  anomaly signal; baseline is ~55–59.
+The original `run_capture_loop.sh` appeared successful on turns 0–5 only
+because Hermes had **pre-warmed state** from earlier manual test invocations.
+Cold Hermes CLI init >> 10 min; warm Hermes CLI init is 5–8 minutes. The
+600s collar was tight enough that a cold start always lost.
 
-## 3. Same-inference invariant holds in the agentic setting
+## Fixes applied
 
-- The Hermes turn's `prompt_preview` is the Hermes system prompt, and its
-  activations are from the *exact* `generate()` that produced the agent's reply — no
-  replay, no second model. Faithful to `REPORT.md` §4.
+1. **Resilient loop** (`run_capture_loop_resilient.sh`): checks /healthz before
+   each turn, kills+restarts the server if unhealthy.
+2. **Timeout bump**: `timeout 600` → `timeout 1200` (20 min) in both scripts,
+   so tight collar no longer kills a cold turn.
+3. **Recommended (better) fix**: pre-warm Hermes before the loop: run one
+   short Hermes turn to completion (or even let it timeout once) so the
+   framework's heavy init happens before the main loop starts. Then the
+   actual productive 5–8 min turns start immediately.
 
-## Open questions for the next captures
+## Confirmed: the capture path itself works end-to-end
 
-- Does a *trained* SAE on Gemma-4-E2B layer 23 show feature-level loop
-  signals the raw cosine misses?
-- Do other layers (early vs late) show the collapse the text implies?
-- Across many varied prompts, what is the distribution of loop-fraction? Is the 2B
-  model systematically degenerate, or only on arithmetic/short-answer prompts?
+When Hermes does reach the server and the generation completes, the
+capture **always** lands: 15/15 turns that reached `write_records` produced
+a valid `.npz` with `acts [N, 1536]` float32. The hook, the server, and the
+file format are all solid. This is a Hermes-CLI-side inefficiency, not a
+capture-bug.

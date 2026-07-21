@@ -27,7 +27,7 @@ echo "[$(date +%H:%M:%S)] capture loop start; will run until $(date -d @$END +%H
 while [ "$(date +%s)" -lt "$END" ]; do
   p="${PROMPTS[$((i % ${#PROMPTS[@]}))]}"
   echo "[$(date +%H:%M:%S)] turn $i :: $p" >> "$LOG"
-  timeout 600 hermes -p nla-local chat -q "$p" >> "$LOG" 2>&1
+  timeout 1200 hermes -p nla-local chat -q "$p" >> "$LOG" 2>&1
   ec=$?
   echo "[$(date +%H:%M:%S)] turn $i exit=$ec" >> "$LOG"
   i=$((i+1))
