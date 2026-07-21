@@ -4,11 +4,16 @@
 and the Nous Research team, 2026-07-21. Code and evidence:
 [github.com/SolshineCode/hermes-sae](https://github.com/SolshineCode/hermes-sae).*
 
-## The short version
+## What this is
 
 While Hermes Agent runs on a local model, I attach sparse autoencoder (SAE)
 probes to the model's residual stream and log which learned features fire, per
-token, as the agent works. The transcript tells you what the agent said. The
+token, as the agent works. An SAE here is a learned dictionary that unmixes
+the model's dense internal activity into individual, human-inspectable
+features, the approach behind Anthropic's
+[Towards Monosemanticity](https://transformer-circuits.pub/2023/monosemantic-features/index.html)
+and [Scaling Monosemanticity](https://transformer-circuits.pub/2024/scaling-monosemanticity/)
+work. The transcript tells you what the agent said. The
 feature trace tells you what the model was doing internally while it said it:
 what lit up during planning, and what was active in the exact forward pass
 where a tool call went sideways.
@@ -24,8 +29,9 @@ produced them.
 
 This only works because the weights are local. You can't hook the residual
 stream of an API: a closed model is a black box by construction, and local
-weights are a glass house the moment you bring instruments. The interpretability story and the local-model story are the
-same story, and that is why I'm bringing it to Nous: an agent stack where
+weights are a glass house the moment you bring instruments. The
+interpretability story and the local-model story are the same story, and
+that is why I'm bringing it to Nous: an agent stack where
 "what is my model actually doing" is a first-class, inspectable question feels
 like a natural extension of what Hermes already is. Goodfire built roughly
 this as a hosted product (Ember) and then closed it to partners-only earlier
@@ -124,15 +130,18 @@ contract between them is a documented sidecar schema.
 
 ## How this relates to Nous's own interpretability work
 
-I've read Nightwing's neuron-steering post carefully, and I want to engage
+I've read Nightwing's
+[neuron-steering post](https://nousresearch.com/neuron-steering/) carefully,
+and I want to engage
 its argument directly rather than talk past it. Contrastive Neuron
 Attribution deliberately avoids SAEs because training them is expensive and
 noisy, and for *intervention* at high steering strengths that tradeoff makes
 sense. This project sits on the other side of the same coin, and it dodges
 the training-cost objection: it consumes pretrained open SAEs rather than
 requiring anyone to train new ones. Goodfire's open-sourced SAEs for
-Llama-3.1-8B-Instruct and Llama-3.3-70B-Instruct are directly loadable by
-this probe, and since the Hermes model line shares the Llama base family, an
+[Llama-3.1-8B-Instruct](https://huggingface.co/Goodfire/Llama-3.1-8B-Instruct-SAE-l19)
+and [Llama-3.3-70B-Instruct](https://huggingface.co/Goodfire/Llama-3.3-70B-Instruct-SAE-l50)
+are directly loadable by this probe, and since the Hermes model line shares the Llama base family, an
 obvious experiment is whether those dictionaries transfer usefully to Hermes
 checkpoints under fine-tuning. If they do, Hermes users get named-feature
 internals for their own models with zero training cost. If they don't, that's
@@ -144,7 +153,7 @@ off-task drift, and nudge the model back on task mid-run. CNA is a
 credible steering backend for exactly that closed loop, with the SAE trace
 as the trigger and CNA neuron sets as the actuator. Read with one method,
 act with the other. I'd genuinely like to explore that with whoever did the
-neural-steering work.
+[neural-steering](https://github.com/NousResearch/neural-steering) work.
 
 ## What's established and what isn't
 
