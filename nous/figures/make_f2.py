@@ -78,6 +78,8 @@ for src, dst, label, orient in ARROWS:
     ax.text(lx, ly, label, ha="center" if orient == "h" else "left",
             va="center", fontsize=10.5, color=ARROW, family="DejaVu Sans")
 
-out = Path(__file__).parent / "f2_architecture.png"
-fig.savefig(out, bbox_inches="tight", facecolor=BG)
-print(f"wrote {out}")
+for name in ("f2_architecture.png", "f2_architecture.svg"):
+    out = Path(__file__).parent / name
+    fig.savefig(out, bbox_inches="tight", facecolor=BG,
+                dpi=300 if name.endswith(".png") else "figure")
+    print(f"wrote {out}")

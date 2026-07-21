@@ -6,7 +6,7 @@ project with [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 - [`WRITEUP.md`](WRITEUP.md) — the memo: what runs today, the evidence tiers,
   the `sae_trace` observability plugin, how this relates to Nous's own
   neuron-steering work, and honest limits. Also available as
-  [`WRITEUP.pdf`](WRITEUP.pdf) (same content, repo links absolute).
+  [`Hermes-SAE-Writeup.pdf`](Hermes-SAE-Writeup.pdf) (same content, repo links absolute).
 - [`figures/`](figures/) — figures referenced by the memo.
 - [`../probe-demo/`](../probe-demo/) — minimal standalone probe demo.
 - [`../2026-07-19-agent-integrated-sae-capture/`](../2026-07-19-agent-integrated-sae-capture/)
