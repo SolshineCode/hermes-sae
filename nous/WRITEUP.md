@@ -31,6 +31,19 @@ this as a hosted product (Ember) and then closed it to partners-only earlier
 this year. Nobody currently offers it in the form your users would actually
 want: self-hosted and open, wired into the agent loop.
 
+Closing that gap is the point of this project. My mission with this work is
+to democratize access to mechanistic interpretability, the research side and
+the applied side both. Right now, watching a model's internals while it does
+real work is something you get at a frontier lab or through an enterprise
+product, and mostly nowhere else. The pieces to change that are already
+open: weights are local, good pretrained SAE dictionaries are sitting on
+HuggingFace, and Hermes is built to run local models. Wire them together and
+anyone with their own hardware can see what their model was doing on every
+agent turn, debug looping and drift from internal state instead of
+transcript guesswork, and do real interpretability work without anyone's
+permission. The field gets more trustworthy when far more people can
+practice it, not just read about it.
+
 ## What runs today
 
 Three tiers of evidence, from most Hermes-relevant to most statistical. All
@@ -149,6 +162,9 @@ won't present it as a safety guarantee.
 
 ## What I'm offering
 
+Everything below is built so a Hermes user can pick it up without me in the
+loop. Nothing depends on my hardware or my server.
+
 1. **The repo**, MIT-licensed: serving layer, probe, analyzers, reports, and
    a one-command CPU replication.
 2. **The `sae_trace` plugin**, PR-ready for the observability family or
@@ -164,8 +180,11 @@ won't present it as a safety guarantee.
 
 Powerful AI in the hands of the many should include the ability to see inside
 it. Hermes already gives people sovereignty over their weights and their
-agent. This adds sovereignty over knowing what those weights are doing while
-the agent runs. I'd love the team's read on where it would be most useful.
+agent. This adds the missing layer: knowing what those weights are doing
+while the agent runs, on your own machine, answerable to no one. That
+capability shouldn't live behind an enterprise contract, and after this week
+it doesn't have to. I'd love the team's read on where it would be most
+useful.
 
 *Repo: [github.com/SolshineCode/hermes-sae](https://github.com/SolshineCode/hermes-sae).
 I'm on Discord and happy to walk through any of it live.*
