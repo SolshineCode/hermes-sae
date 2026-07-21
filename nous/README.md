@@ -1,30 +1,18 @@
-# Nous Research materials
+# Nous Research / Hermes Agent materials
 
-Everything related to introducing this work to Nous Research lives here, so the
-Nous-facing thread has one home instead of being spread across loose local notes.
+Materials prepared for the Nous Research community around integrating this
+project with [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
-## Contents
+- [`WRITEUP.md`](WRITEUP.md) — the memo: what runs today, the evidence tiers,
+  the `sae_trace` observability plugin, how this relates to Nous's own
+  neuron-steering work, and honest limits.
+- [`figures/`](figures/) — figures referenced by the memo.
+- [`../probe-demo/`](../probe-demo/) — minimal standalone probe demo.
+- [`../2026-07-19-agent-integrated-sae-capture/`](../2026-07-19-agent-integrated-sae-capture/)
+  — the agent-integrated capture: a local model serving as the Hermes Agent
+  model with same-inference residual-stream capture.
 
-- `NOUS_WRITEUP_DRAFT.md` — the technical memo Tristan asked for (2026-07-15),
-  covering hooking SAE probes into an agent harness for a live readout of internal
-  model state while the agent runs. Drafted 2026-07-17, human-writing-check clean.
-  **Not yet sent** as of 2026-07-20, pending review.
-- `NOUS_WRITEUP_PLAN_2026-07-15.md` — the D1/D2/D3 plan behind the memo.
-  D1 (writeup) and D2 (probe demo) are live; D3 (PRs to Nous's GitHub) is on hold.
-- `figures/` — figures referenced by the memo.
-- `../probe-demo/` — the D2 demo: a standalone SAE probe runner (SAELens
-  safetensors loader, per-token top-k hooks), smoke-tested on SmolLM2-135M.
-- `../2026-07-19-agent-integrated-sae-capture/NOUS_REPORT_DRAFT.md` — the later
-  agent-integrated capture report from the same thread.
-
-## Naming caution
-
-This repo's own agent harness is a personal tool that shares a name with Nous's
-product. In anything Nous-facing, do not use that name for the local tool: say
-"the local agent harness" instead, so the two are never confused.
-
-## Provenance
-
-The memo originates from a private DM exchange. Keep the correspondence itself out
-of this repo. Only the technical content belongs here, and this repo is currently
-PRIVATE.
+Naming note: "Hermes Agent" in these documents always refers to Nous
+Research's product. The multi-agent scenario harness that generated the 27B
+trace dataset is a separate local research tool and is referred to only as
+"the local agent harness" or "scenario engine."

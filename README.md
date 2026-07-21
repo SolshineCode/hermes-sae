@@ -1,53 +1,101 @@
-# hermes-sae — same-inference SAE + label instrument
+# hermes-sae — watch a local model think while it runs an agent
 
-Faithful mechanistic readout for any model-generated text: the **exact same
-`model.generate()` call that produces the label text also yields the SAE
-feature activations over the residual stream.** No replay, no second inference,
-no cached-activations round-trip.
+SAE (sparse autoencoder) interpretability for **local models doing real agentic
+work** — built around [Hermes Agent](https://github.com/NousResearch/hermes-agent),
+running on consumer hardware.
 
-## Why "same inference" matters (Caleb's correctness rule)
+The core artifact is an OpenAI-compatible serving layer with SAE forward hooks:
+the **exact same `model.generate()` call** that produces the agent's output also
+yields the SAE feature activations over the residual stream. The transcript
+tells you what the agent said; the feature trace tells you what the model was
+doing internally while it said it.
 
-If you label with one model instance and then re-run the text through a hooked
-model to get SAE features, you have **two inferences** — and activations can
-diverge (sampling, KV state, device placement). That is *unfaithful*.
+![One forward pass, two outputs](nous/figures/f2_architecture.png)
 
-Here, a single `model.generate()` runs with forward hooks registered on every
-decoder layer. After it returns:
-- `out_ids[0, P:]` → decode → **label text**
-- captured residuals sliced to the same generated positions → **SAE features**
+## The same-inference invariant
 
-Both derive from one forward pass / one KV cache, written into one JSON record.
-`meta.same_inference == True` is asserted per row.
+If you label or trace with one model instance and then re-run the text through
+a hooked model to get SAE features, you have **two inferences** — and
+activations can diverge (sampling, KV state, device placement). That is
+unfaithful. Here, forward hooks are registered on the decoder layers of the
+one call that serves the agent:
 
-## Multi-purpose scope
+- `out_ids` → decode → **the agent's output**
+- captured residuals at the same generated positions → **SAE features**
 
-The instrument is model-agnostic. Same-inference readout supports:
-1. Deception / honesty
-2. NLA capability classification (role_playing, domain, factual_claim)
-3. Safety / refusal
-4. Agent-trace cognition (planning vs executing)
-5. Sycophancy / faithfulness
+Both derive from one forward pass / one KV cache, written into one record.
+`meta.same_inference == True` is asserted per row, and `gen_text` has been
+verified byte-identical between the engine-direct and HTTP-server paths.
 
-Label *schema* is config-driven (`labeler_config.yaml` + prompt set), so each
-use-case selects its own labeling head while reusing the SAE capture path.
+## What's demonstrated so far
 
-## Layout
+1. **Feature separability at 27B scale** — on a real 181-turn agentic trace
+   (Qwen3.5-27B, fp16, 2× Tesla M40, 5 SAE layers, d_sae=81920/layer),
+   37–44% of features firing in ≥20 turns survive BH-FDR (α=0.05) as
+   discriminators of insider vs. clean scenario turns, with presence-only
+   signatures at every layer. Full stats, caveats, and what this does *not*
+   establish: [`B1_REAL_27B_REPORT_2026_07_20.md`](B1_REAL_27B_REPORT_2026_07_20.md).
+2. **Agent-integrated capture inside Hermes Agent** — a local model
+   (Gemma-4-E2B, NF4, 4 GB GPU) served *as the Hermes Agent model* with
+   residual-stream capture of the exact inferences that drove the agent, plus
+   behavioral analysis (a degenerate-loop attractor detected from activation
+   geometry, not from the transcript):
+   [`2026-07-19-agent-integrated-sae-capture/`](2026-07-19-agent-integrated-sae-capture/).
+3. **CPU-only replication in one command** — the same pipeline on gpt2-small
+   and Qwen2.5-0.5B with publicly released SAEs, no GPU required:
+   `./setup_cpu_test.sh qwen25b`. See [`validation_cpu/`](validation_cpu/).
 
-- `sae_labeled_course.py` — hooked same-inference course (labeler_a/b/auditor).
-- `labeler_service.py` — prompt assembly + `extract_label` (incl. truncated-JSON recovery).
-- `validate_quant_sameness.py` — B: prove quant (int4) vs fp16 SAE-feature sameness.
-- `runner/run_sae_course_deferred.sh` — scheduler-safe waiter (triple backstop:
-  no-pipe-before-& PID, OS `timeout`, `pkill` fallback) so it can never overrun a slot.
+## Quickstart (no GPU needed)
 
-## Correctness invariants
+```bash
+git clone https://github.com/SolshineCode/hermes-sae
+cd hermes-sae
+./setup_cpu_test.sh qwen25b   # fetches model + released SAE, runs a hooked capture
+```
 
-- `device_map=auto`; `inp.to(model.device)` (NOT hardcoded cuda:0 — would yield empty text).
-- Hooks capture `out[0]` residual per layer; clone to avoid autograd aliasing.
-- `--max-new-tokens 2200` so the label schema isn't truncated mid-object (recovery as backstop).
-- SAEs trained on fp16 activations → quantization sameness MUST be re-validated (see validate_quant_sameness.py).
+For the minimal standalone probe (any HF model + matching SAE, live per-token
+feature stream in ~130 lines), see [`probe-demo/`](probe-demo/).
 
-## Status
+To serve a hooked model to Hermes Agent (or any OpenAI-compatible client):
+`sae_serve.py` exposes `/v1/chat/completions` and writes a feature-trace JSONL
+sidecar per request. Point Hermes at it as a custom provider — the recipe is in
+[`2026-07-19-agent-integrated-sae-capture/LOCAL_MODEL_IN_HERMES_AGENT.md`](2026-07-19-agent-integrated-sae-capture/LOCAL_MODEL_IN_HERMES_AGENT.md).
 
-- ✅ Same-inference capture proven (row 0: ok=True, agree=1.0, same_inf=True).
-- ⏳ Quant sameness validation (booking 56a2d647, 2026-07-16 21:35, gpu=1).
-- ⏳ Throughput: fp16 CPU-offload ~13.5 h/row → 4-bit quant on single GPU is the scale unlock.
+## Repo map
+
+| Path | What it is |
+|------|------------|
+| `sae_serve.py` | OpenAI-compatible serving layer with SAE hooks + JSONL sidecar |
+| `probe-demo/` | Minimal standalone probe (one file, one command) |
+| `2026-07-19-agent-integrated-sae-capture/` | Local model *as* the Hermes Agent model, with capture + analysis |
+| `sae_labeled_course.py`, `labeler_service.py` | Same-inference SAE + labeling instrument (the original course) |
+| `fast_dpilot_sep.py`, `analyze_dpilot_separability.py` | Separability analyzers (rank-AUC, permutation p, BH-FDR) |
+| `B1_REAL_27B_REPORT_2026_07_20.md` | The 27B separability result, in full |
+| `FALSIFIABLE_CLAIM_DESIGN.md` | Pre-registered claims + null-result conditions (written before data) |
+| `FABLE5_AUDIT.md` | Independent adversarial audit of an earlier pipeline version — kept public; the fixes it forced are in the current analyzers |
+| `validation_cpu/`, `validation_real_27B/` | Replication artifacts |
+| `nous/` | Writeup + figures for the Nous Research / Hermes Agent community |
+
+## Honest status
+
+- Read-only observability is validated (same-inference capture at 27B and on
+  CPU; agent-integrated capture inside Hermes Agent).
+- The insider/clean separability result distinguishes *scenario pools*; whether
+  features encode deception specifically requires the matched-pair test
+  (pre-registered, not yet run).
+- Feature **steering** (per-feature bias at serve time) is roadmap, not result.
+- SAE dictionary quality varies by layer; feature labeling coverage is minimal
+  so far.
+- An earlier version of the statistics pipeline had real flaws — an independent
+  adversarial audit ([`FABLE5_AUDIT.md`](FABLE5_AUDIT.md)) found them, and the
+  current analyzers are the post-audit redesign. The audit stays in the repo on
+  purpose.
+
+Hardware context: the 27B results ran on a used Dell T7610 with 2× Tesla M40
+24GB (< $200 of GPU); the agent-integrated capture ran on a ThinkPad's 4 GB
+GTX 1650 Ti; the replication path needs no GPU at all. This is deliberately a
+consumer/homelab-grade instrument.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
