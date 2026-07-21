@@ -23,7 +23,8 @@ produced them.
 ![One forward pass, two outputs](figures/f2_architecture.png)
 
 This only works because the weights are local. You can't hook the residual
-stream of an API. The interpretability story and the local-model story are the
+stream of an API: a closed model is a black box by construction, and local
+weights are a glass house the moment you bring instruments. The interpretability story and the local-model story are the
 same story, and that is why I'm bringing it to Nous: an agent stack where
 "what is my model actually doing" is a first-class, inspectable question feels
 like a natural extension of what Hermes already is. Goodfire built roughly
@@ -54,7 +55,10 @@ I ran Gemma-4-E2B (4-bit, on a 4 GB laptop GPU) as the acting model for a real
 Hermes Agent install, through an OpenAI-compatible server that hooks the
 residual stream inside its own `generate()` call. Hermes points at it with a
 stock custom-provider profile: `model.provider custom`, `model.base_url
-http://127.0.0.1:8000/v1`. No fork, no patch to Hermes. Every agent turn
+http://127.0.0.1:8000/v1`. No fork, no patch to Hermes. I picked a model
+I'd already built a dictionary for: the SAE for Gemma-4-E2B is one I
+trained and published on Hugging Face this spring
+([gemma-4-e2b-scope-v1](https://huggingface.co/Solshine/gemma-4-e2b-scope-v1-L17-batchtopk-k64-seed17)). Every agent turn
 produces both the reply Hermes sees and a capture of the residual-stream
 activations of that exact inference, correlated by request. The recipe is
 [here](../2026-07-19-agent-integrated-sae-capture/LOCAL_MODEL_IN_HERMES_AGENT.md).
@@ -98,8 +102,7 @@ byte-identical generation text between engine-direct and HTTP-server modes.
 One deliberate point about rigor: an earlier version of my statistics pipeline
 had real flaws, and I had it adversarially audited before trusting it. The
 [audit](../FABLE5_AUDIT.md) is public in the repo, and the current analyzers
-are the post-audit redesign. I'd rather show the team the failure and the
-fix than a clean-looking result with no history.
+are the post-audit redesign.
 
 ## The Hermes Agent plugin
 
