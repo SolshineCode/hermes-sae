@@ -1,0 +1,30 @@
+# DRAFT entry for NousResearch/hermes-agent: plugin-catalog/sae_trace.yaml
+# Before opening the catalog PR:
+#   1. Replace sha with the full 40-char commit of the release you want listed
+#      (git rev-parse HEAD on the tagged commit) and keep version in sync.
+#   2. Run: hermes plugins validate sae_trace --install-deps   (at that commit)
+name: sae_trace
+repo: https://github.com/SolshineCode/hermes-sae-trace
+sha: 0000000000000000000000000000000000000000
+subdir: sae_trace
+description: >-
+  SAE (sparse autoencoder) feature traces for local models: correlates each agent turn with the
+  same-inference feature activations logged by an SAE-hooked OpenAI-compatible server, with a
+  /sae command and a zero-install session dashboard. Disclosure: reads one configured sidecar
+  JSONL file read-only and appends per-session JSONL to its plugin data dir; no network, no
+  shell commands, no background processes, no credentials, stdlib-only.
+maintainer: SolshineCode
+tier: community
+category: models
+requires_hermes: ">=0.21"
+version: "0.3.0"
+docs_url: https://github.com/SolshineCode/hermes-sae-trace#readme
+platforms: []
+capabilities:
+  provides_tools: []
+  provides_hooks:
+    - pre_api_request
+    - post_api_request
+  provides_middleware: []
+  requires_env:
+    - HERMES_SAE_TRACE_FILE

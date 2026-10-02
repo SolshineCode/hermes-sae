@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    # Unit tests need no Hermes checkout (the plugin is stdlib-only).
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -e ".[test]"
+      - run: python -m pytest -q
+
+  hermes-validate:
+    # Same gate the plugin-catalog CI runs, against current Hermes main:
+    # manifest, declared-vs-registered hooks, security scan, no core override.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Hermes Agent (main) from its lockfile
+        run: |
+          git clone --depth 1 https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+          cd "$RUNNER_TEMP/hermes-agent" && uv sync --frozen
+      - name: hermes plugins validate
+        run: |
+          export HERMES_HOME="$(mktemp -d)"
+          cd "$RUNNER_TEMP/hermes-agent"
+          uv run hermes plugins validate "$GITHUB_WORKSPACE/sae_trace" --install-deps
+          uv run hermes plugins doctor "$GITHUB_WORKSPACE/sae_trace" --ci
+      - name: Tests with Hermes installed (live discovery test runs)
+        run: |
+          cd "$RUNNER_TEMP/hermes-agent"
+          uv pip install pytest pyyaml
+          uv run python -m pytest -q "$GITHUB_WORKSPACE/tests"

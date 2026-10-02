@@ -126,10 +126,18 @@ the SAE-hooked server emits, writes a per-session interpretability sidecar,
 and documents the JSONL schema as an interface so any OpenAI-compatible
 server that emits it works, not just mine. It's built to run either as a
 standalone plugin in `~/.hermes/plugins/` (that copy lives in
-[`hermes-plugin/sae_trace/`](../hermes-plugin/sae_trace/)) or bundled under
+[`hermes-sae-trace/sae_trace/`](../hermes-sae-trace/sae_trace/)) or bundled under
 `plugins/observability/` with a 35-test suite. The bundled version is
 submitted as [PR #68543](https://github.com/NousResearch/hermes-agent/pull/68543);
 whichever adoption path the team prefers works for me.
+
+> **Update (2026-10-02):** the team chose the standalone route (Hermes'
+> policy is that observability integrations ship as separate plugin repos,
+> a coupling decision rather than a quality judgment). The plugin is now
+> its own repo, `SolshineCode/hermes-sae-trace` (staged in this repo under
+> [`hermes-sae-trace/`](../hermes-sae-trace/)), installable with pip and
+> headed for the Hermes plugin catalog. The 35-test suite moved with it
+> and grew to 43 tests.
 
 The plugin also gives Hermes users a watch-your-session view with zero
 install: it ships a single self-contained `dashboard.html` (no server, no

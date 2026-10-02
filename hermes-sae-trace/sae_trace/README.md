@@ -5,12 +5,15 @@ autoencoder) feature-trace records emitted by an SAE-hooked local
 OpenAI-compatible model server — a per-session interpretability trace of
 what your local model's internals were doing while it ran the agent.
 
-This is the standalone copy of the plugin (also proposed upstream to
-`NousResearch/hermes-agent` as `plugins/observability/sae_trace`, where it
-ships with a 35-test suite). It is **opt-in** — it only loads when you
+This is an out-of-tree Hermes plugin
+([SolshineCode/hermes-sae-trace](https://github.com/SolshineCode/hermes-sae-trace)),
+following Hermes' policy that observability integrations ship as standalone
+plugin repos. It extends Hermes only through public surfaces
+(`register_hook`, `register_command`, `ctx.state`) and never patches or
+imports Hermes internals. It is **opt-in** — it only loads when you
 explicitly enable it. It is a pure read-only observer on the
-`hermes.observer.v1` hooks contract (see
-[`docs/observability/README.md`](https://github.com/NousResearch/hermes-agent/blob/main/docs/observability/README.md)):
+`hermes.observer.v1` hooks contract (see the
+[observer hooks guide](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/observer-hooks.md)):
 it never modifies requests, responses, or the sidecar file, uses only the
 Python stdlib, and touches only local files (no network).
 
@@ -37,13 +40,25 @@ workstation — the plugin only needs the sidecar JSONL your server writes.
    appends one correlated line per agent turn to
    `$HERMES_SAE_TRACE_OUT_DIR/<session_id>.jsonl`.
 
-## Enable
+## Install and enable
+
+Pick one install route, then enable (plugins are opt-in):
 
 ```bash
-mkdir -p ~/.hermes/plugins
-cp -r hermes-plugin/sae_trace ~/.hermes/plugins/sae_trace
+# A) From the Hermes plugin catalog (once listed; installs the reviewed, SHA-pinned commit)
+hermes plugins install sae_trace
+
+# B) pip (discovered through the hermes_agent.plugins entry point)
+pip install "git+https://github.com/SolshineCode/hermes-sae-trace"
+
+# C) Manual copy into your plugins directory
+git clone https://github.com/SolshineCode/hermes-sae-trace
+cp -r hermes-sae-trace/sae_trace ~/.hermes/plugins/sae_trace
+
 hermes plugins enable sae_trace
 ```
+
+Use only one route at a time, so two copies don't both register `/sae`.
 
 ## Configuration
 
@@ -55,10 +70,20 @@ Set in `~/.hermes/.env`:
 HERMES_SAE_TRACE_FILE=/path/to/sae_history.jsonl
 
 # Optional
-HERMES_SAE_TRACE_OUT_DIR=~/.hermes/sae_trace   # default: $HERMES_HOME/sae_trace
+HERMES_SAE_TRACE_OUT_DIR=~/sae_traces         # default: traces/ in the plugin's data dir
 HERMES_SAE_TRACE_SKEW=10                       # time-window slack (seconds)
 HERMES_SAE_TRACE_DEBUG=true                    # verbose plugin logging
 ```
+
+By default traces go to `traces/` inside the plugin's profile-scoped data
+directory under `$HERMES_HOME/plugin-data/` (the location Hermes reserves
+for plugin-written data, which survives `hermes plugins update`/`remove`).
+`/sae status` prints the resolved path as `out dir`.
+
+> **Upgrading from 0.2.0:** the default output directory moved from
+> `$HERMES_HOME/sae_trace/` to the plugin data directory. Existing traces
+> are not moved; set `HERMES_SAE_TRACE_OUT_DIR=$HERMES_HOME/sae_trace` to
+> keep the old location.
 
 ## Pointing Hermes at an SAE-hooked server
 
@@ -179,8 +204,24 @@ Other limitations:
   (the tailer starts at end-of-file).
 - Only local-model turns routed through the instrumented server produce
   records; cloud-provider turns simply have no trace (by design).
+- Configuration is read from process environment variables, so one Hermes
+  process correlates against one sidecar. A process serving several
+  profiles at once (for example a multi-profile gateway) shares that
+  sidecar and, for pip installs, one set of counters; set
+  `HERMES_SAE_TRACE_OUT_DIR` explicitly if you need a fixed trace
+  location in that setup.
 
-## Security
+## Security and disclosures
+
+What the plugin does, for review before installing:
+
+- **Network:** none. No requests, no telemetry, nothing sent anywhere.
+- **Reads:** one operator-configured file (`HERMES_SAE_TRACE_FILE`), outside
+  the plugin's own data, read-only.
+- **Writes:** appends JSONL under the output directory (default: the
+  plugin's own data directory).
+- **Shell commands, background processes, stored credentials:** none.
+- **Dependencies:** none (Python standard library only).
 
 Local files only. The plugin reads one operator-configured sidecar file
 and appends to `$HERMES_SAE_TRACE_OUT_DIR`; it makes **no network
