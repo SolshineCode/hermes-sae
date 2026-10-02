@@ -21,7 +21,10 @@ can say "`hermes plugins install sae_trace`".
 ## 1. Create the standalone repo (PowerShell)
 
 This directory was staged inside `SolshineCode/hermes-sae`.
-`git subtree split` extracts it with its history.
+`git subtree split` extracts it as a clean repo root. The split starts at
+the v0.3.0 commit; earlier plugin history (when it lived under
+`hermes-plugin/sae_trace/`) stays in `hermes-sae`, and `CHANGELOG.md`
+summarizes it.
 
 ```powershell
 # From your hermes-sae clone, on the branch that contains hermes-sae-trace/
