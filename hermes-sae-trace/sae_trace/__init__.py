@@ -15,11 +15,16 @@ new sidecar records against the request's identity and timing, then
 writes correlated per-turn records under
 ``$HERMES_SAE_TRACE_OUT_DIR/<session_id>.jsonl``.
 
+This is an out-of-tree plugin (https://github.com/SolshineCode/hermes-sae-trace).
+It extends Hermes only through public surfaces — ``register_hook`` on the
+observer hooks, ``register_command`` for ``/sae``, and ``ctx.state`` for
+its data directory — and never patches or imports Hermes internals.
+
 Activation is handled by the Hermes plugin system — standalone plugins
 only load when listed in ``plugins.enabled`` (via
-``hermes plugins enable observability/sae_trace``). At runtime the
-plugin also requires ``HERMES_SAE_TRACE_FILE``; without it the hooks are
-inert (fail-open, like the langfuse plugin).
+``hermes plugins enable sae_trace``). At runtime the plugin also
+requires ``HERMES_SAE_TRACE_FILE``; without it the hooks are inert
+(fail-open, like the langfuse plugin).
 
 Required env vars (set via ~/.hermes/.env):
   HERMES_SAE_TRACE_FILE     - path to the SAE server's sidecar JSONL
@@ -27,7 +32,10 @@ Required env vars (set via ~/.hermes/.env):
 
 Optional env vars:
   HERMES_SAE_TRACE_OUT_DIR  - output directory for correlated per-session
-                              traces (default: $HERMES_HOME/sae_trace)
+                              traces (default: ``traces/`` inside this
+                              plugin's profile-scoped data directory under
+                              $HERMES_HOME/plugin-data/; ``/sae status``
+                              prints the resolved path)
   HERMES_SAE_TRACE_SKEW     - time-window slack in seconds around each
                               API request when matching by timestamp
                               (default: 10)
@@ -48,45 +56,43 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-try:
-    # In-tree install: shared thread-safety helper from plugins/plugin_utils.py.
-    from plugins.plugin_utils import SingletonSlot
-except Exception:  # pragma: no cover - exercised via the standalone-load test
-    # Standalone install (~/.hermes/plugins/sae_trace/): the plugin loader
-    # imports this module as ``hermes_plugins.sae_trace`` from its own
-    # directory, where ``plugins.plugin_utils`` may not be importable.
-    # Minimal drop-in fallback with the same semantics (double-checked
-    # locking; a raising factory caches nothing).
-    class SingletonSlot:  # type: ignore[no-redef]
-        __slots__ = ("_lock", "_value", "_set")
+class SingletonSlot:
+    """Lazily-built, thread-safe single value (double-checked locking).
 
-        def __init__(self) -> None:
-            self._lock = threading.Lock()
-            self._value: Any = None
-            self._set = False
+    A raising factory caches nothing. Kept local on purpose: this plugin is
+    distributed out-of-tree, and Hermes internal import paths (for example
+    ``plugins.plugin_utils``) are not part of the plugin API contract.
+    """
 
-        def get(self, factory):
+    __slots__ = ("_lock", "_value", "_set")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._value: Any = None
+        self._set = False
+
+    def get(self, factory: Callable[[], Any]) -> Any:
+        if self._set:
+            return self._value
+        with self._lock:
             if self._set:
                 return self._value
-            with self._lock:
-                if self._set:
-                    return self._value
-                value = factory()
-                self._value = value
-                self._set = True
-                return value
+            value = factory()
+            self._value = value
+            self._set = True
+            return value
 
-        def peek(self):
-            return self._value if self._set else None
+    def peek(self) -> Any:
+        return self._value if self._set else None
 
-        def reset(self) -> None:
-            with self._lock:
-                self._value = None
-                self._set = False
+    def reset(self) -> None:
+        with self._lock:
+            self._value = None
+            self._set = False
 
 
 # ---------------------------------------------------------------------------
@@ -134,24 +140,27 @@ class _Config:
 
 _CONFIG_SLOT: SingletonSlot = SingletonSlot()
 
+# Profile-scoped plugin data root handed to us by Hermes in register(ctx)
+# (``ctx.state.data_dir``, a namespaced dir under ``<HERMES_HOME>/plugin-data/``). This
+# is the sanctioned home for plugin-written files: it survives
+# ``hermes plugins update`` / ``remove`` and follows the active profile.
+_DATA_DIR: Optional[Path] = None
+
 
 def _default_out_dir() -> Path:
-    try:
-        from hermes_constants import get_hermes_home
-
-        return get_hermes_home() / "sae_trace"
-    except Exception:
-        # Standalone / degraded path: fall back to the same convention
-        # get_hermes_home() itself uses.
-        home = _env("HERMES_HOME")
-        base = Path(home) if home else (Path.home() / ".hermes")
-        return base / "sae_trace"
+    if _DATA_DIR is not None:
+        return _DATA_DIR / "traces"
+    # Degraded path (older Hermes without ctx.state, or the module used
+    # outside Hermes): same layout, derived from HERMES_HOME directly.
+    home = _env("HERMES_HOME")
+    base = Path(home).expanduser() if home else (Path.home() / ".hermes")
+    return base / "plugin-data" / "sae_trace" / "traces"
 
 
 def _build_config() -> Optional[_Config]:
     trace_file = _env("HERMES_SAE_TRACE_FILE")
     if not trace_file:
-        _debug("HERMES_SAE_TRACE_FILE not set — hooks are inert")
+        _debug("HERMES_SAE_TRACE_FILE not set - hooks are inert")
         return None
     out_dir_raw = _env("HERMES_SAE_TRACE_OUT_DIR")
     out_dir = Path(out_dir_raw).expanduser() if out_dir_raw else _default_out_dir()
@@ -614,7 +623,7 @@ def on_post_api_request(
 # ---------------------------------------------------------------------------
 
 _HELP_TEXT = """\
-/sae — SAE feature-trace status
+/sae - SAE feature-trace status
 
 Subcommands:
   status     Sidecar path, records seen/matched this session, last match
@@ -622,7 +631,8 @@ Subcommands:
   dashboard  Where to find the zero-install session dashboard (dashboard.html)
 
 Configure via HERMES_SAE_TRACE_FILE (sidecar JSONL) and
-HERMES_SAE_TRACE_OUT_DIR (default: $HERMES_HOME/sae_trace).
+HERMES_SAE_TRACE_OUT_DIR (default: traces/ in this plugin's data dir
+under $HERMES_HOME/plugin-data/; see 'out dir' in /sae status).
 """
 
 
@@ -725,12 +735,23 @@ def _handle_slash(raw_args: str) -> Optional[str]:
 # Plugin registration
 # ---------------------------------------------------------------------------
 
+def _resolve_data_dir(ctx: Any) -> Optional[Path]:
+    """Return ``ctx.state.data_dir`` when this Hermes exposes it, else None."""
+    try:
+        data_dir = ctx.state.data_dir
+    except Exception:
+        return None
+    return Path(data_dir) if data_dir else None
+
+
 def register(ctx) -> None:
+    global _DATA_DIR
+    _DATA_DIR = _resolve_data_dir(ctx)
     ctx.register_hook("pre_api_request", on_pre_api_request)
     ctx.register_hook("post_api_request", on_post_api_request)
     ctx.register_command(
         "sae",
         handler=_handle_slash,
         description="Show SAE feature-trace correlation status for this session.",
-        args_hint="status|last",
+        args_hint="status|last|dashboard",
     )

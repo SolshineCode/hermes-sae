@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-sae-trace"
+version = "0.3.0"
+description = "Hermes Agent plugin: correlate each agent turn with same-inference SAE (sparse autoencoder) feature traces from a local model server."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Caleb DeLeeuw (SolshineCode)" }]
+requires-python = ">=3.11"
+# Runtime is stdlib-only on purpose: no torch, no GPU, no network.
+dependencies = []
+keywords = ["hermes-agent", "sparse-autoencoder", "interpretability", "mechanistic-interpretability", "observability"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9", "pyyaml>=6,<7"]
+
+[project.urls]
+Homepage = "https://github.com/SolshineCode/hermes-sae-trace"
+Research = "https://github.com/SolshineCode/hermes-sae"
+
+# Pip install path: Hermes discovers this through the hermes_agent.plugins
+# entry-point group. The catalog / git install path uses sae_trace/plugin.yaml.
+[project.entry-points."hermes_agent.plugins"]
+sae_trace = "sae_trace:register"
+
+[tool.setuptools]
+packages = ["sae_trace"]
+
+[tool.setuptools.package-data]
+sae_trace = ["plugin.yaml", "dashboard.html", "README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
